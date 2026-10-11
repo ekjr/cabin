@@ -4,11 +4,12 @@
 #   cabin on | off | toggle        turn Cabin on (last mode) / off / flip
 #   cabin hfp | sap                switch mode (and turn on)
 #   cabin set KEY VALUE            CALL_AUDIO tablet|phone, MEDIA_SINK 0|1, HFP_AG auto|keep|off,
-#                                  CALL_HANDLER auto|system|cabin
+#                                  CALL_HANDLER auto|system|cabin, MIC_BOOST 0|6|12|18|24
 #   cabin status                   show mode, settings and Bluetooth profile state
 #   cabin restart-bt               restart Bluetooth so profile changes take effect
 #   cabin sap-report               what this device's modem offers for SAP mode
 #   cabin report                   save a debug report to /sdcard/Download/cabin-report.txt
+#   cabin refresh-audio            re-apply the call-audio fixes without a reboot
 #
 # Internal (module scripts): boot-props, boot, from-app KEY VALUE
 
@@ -62,6 +63,7 @@ load_conf() {
   MEDIA_SINK=0
   HFP_AG=auto
   CALL_HANDLER=auto
+  MIC_BOOST=12
   [ -f "$CONF" ] || return 0
   while IFS='=' read -r k v; do
     case "$k" in
@@ -71,6 +73,7 @@ load_conf() {
       MEDIA_SINK) case "$v" in 0|1) MEDIA_SINK=$v ;; esac ;;
       HFP_AG) case "$v" in auto|keep|off) HFP_AG=$v ;; esac ;;
       CALL_HANDLER) case "$v" in auto|system|cabin) CALL_HANDLER=$v ;; esac ;;
+      MIC_BOOST) case "$v" in 0|6|12|18|24) MIC_BOOST=$v ;; esac ;;
     esac
   done < "$CONF"
 }
@@ -83,6 +86,7 @@ CALL_AUDIO=$CALL_AUDIO
 MEDIA_SINK=$MEDIA_SINK
 HFP_AG=$HFP_AG
 CALL_HANDLER=$CALL_HANDLER
+MIC_BOOST=$MIC_BOOST
 EOF
   mv "$CONF.tmp" "$CONF"
 }
@@ -208,10 +212,35 @@ has_ctl() {
 #     so the downlink never starts. Add it when the kernel has it.
 #  4. With the call on the earpiece the HAL looks up "hfp-sco handset", which isn't defined,
 #     so none of the car-kit switches get set. Alias it to "hfp-sco".
+#  5. Car-kit calls skip the voice DSP, which normally adds mic gain, so the other side hears
+#     you quietly. Raise the codec's mic gain (DECn Volume) by MIC_BOOST dB, in "hfp-sco"
+#     only, so it applies during car-kit calls and resets after.
+# Stock mixer files, saved before Magisk mounts Cabin's copies (post-fs-data) so later
+# refreshes always start from the real stock files.
+STOCK_MIXERS=$DATA/stock
+save_stock_mixers() {
+  mkdir -p "$STOCK_MIXERS"
+  rm -f "$STOCK_MIXERS"/mixer_paths*.xml
+  if [ "$1" = unmounted ]; then
+    # Already mounted: read the stock files from a private mount namespace. It must be made
+    # private before unmounting, or the unmount propagates to the real (shared) mounts.
+    bb=
+    for b in /data/adb/magisk/busybox /data/adb/ksu/bin/busybox /data/adb/ap/bin/busybox; do
+      [ -x "$b" ] && { bb=$b; break; }
+    done
+    [ -n "$bb" ] || { log "no busybox; can't read stock mixer files without a reboot"; return 1; }
+    unshare -m sh -c '"$1" mount --make-rprivate / || exit 1
+      for f in /vendor/etc/mixer_paths*.xml; do umount "$f" 2>/dev/null; cp "$f" "$0/"; done' \
+      "$STOCK_MIXERS" "$bb"
+  else
+    cp /vendor/etc/mixer_paths*.xml "$STOCK_MIXERS/" 2>/dev/null
+  fi
+}
+
 patch_mixer_paths() {
   out=$MODDIR/system/vendor/etc
   rm -f "$out"/mixer_paths*.xml
-  for f in /vendor/etc/mixer_paths*.xml; do
+  for f in "$STOCK_MIXERS"/mixer_paths*.xml; do
     [ -f "$f" ] || continue
     name=${f##*/}
     tmp=$DATA/$name.tmp
@@ -238,6 +267,18 @@ patch_mixer_paths() {
       sed -i "s|</mixer>|    <path name=\"$base handset\">\n        <path name=\"$base\" />\n    </path>\n</mixer>|" "$tmp"
       changed="$changed, +$base handset"
     done
+
+    if [ "$MIC_BOOST" -gt 0 ] 2>/dev/null && grep -q '<path name="hfp-sco">' "$tmp"; then
+      for d in DEC1 DEC2 DEC3 DEC4; do
+        grep -q "<path name=\"hfp-sco\">" "$tmp" || break
+        def=$(sed -n "/<mixer>/,/<path /s/.*<ctl name=\"$d Volume\" value=\"\([0-9]*\)\".*/\1/p" "$tmp" | head -1)
+        [ -n "$def" ] || continue
+        sed -n '/<path name="hfp-sco">/,/<\/path>/p' "$tmp" | grep -q "\"$d Volume\"" && continue
+        vol=$((def + MIC_BOOST)); [ $vol -gt 124 ] && vol=124
+        sed -i "s|^\([ 	]*\)<path name=\"hfp-sco\">|&\n\1    <ctl name=\"$d Volume\" value=\"$vol\" />|" "$tmp"
+        changed="$changed, $d $def->$vol"
+      done
+    fi
 
     if [ -f "$MIXER_CTLS" ]; then
       hfp=$(sed -n '/<path name="hfp-sco/,/<\/path>/p' "$tmp")
@@ -266,13 +307,35 @@ patch_mixer_paths() {
       mkdir -p "$out"
       mv "$tmp" "$out/$name"
       chmod 0644 "$out/$name"
-      ctx=$(ls -Z "$f" 2>/dev/null | awk '{print $1}')
+      ctx=$(ls -Z "/vendor/etc/$name" 2>/dev/null | awk '{print $1}')
       [ -n "$ctx" ] && chcon "$ctx" "$out/$name" 2>/dev/null
       log "mixer paths: $name: $changed"
     else
       rm -f "$tmp"
     fi
   done
+}
+
+# Re-applies the mixer fixes without a reboot: rebuild them from the stock files, write them
+# into the copies Magisk already mounted (same file, so the mount sees it), then restart
+# the audio HAL so it reloads them. Audio drops for about a second.
+refresh_audio() {
+  [ -d "$MODDIR/system/vendor/etc" ] || return 0
+  live=$MODDIR/system/vendor/etc
+  stage=$DATA/audio-stage
+  rm -rf "$stage"; mkdir -p "$stage"
+  ls "$STOCK_MIXERS"/mixer_paths*.xml >/dev/null 2>&1 || save_stock_mixers unmounted
+  MODDIR_REAL=$MODDIR
+  MODDIR=$stage patch_mixer_paths
+  MODDIR=$MODDIR_REAL
+  for f in "$stage"/system/vendor/etc/mixer_paths*.xml; do
+    [ -f "$f" ] && [ -f "$live/${f##*/}" ] && cat "$f" > "$live/${f##*/}"
+  done
+  rm -rf "$stage"
+  for p in android.hardware.audio.service vendor.audio-hal vendor.audio-hal-2-0; do
+    pid=$(pidof "$p" 2>/dev/null) && kill $pid
+  done
+  log "audio routes refreshed (mic boost +$MIC_BOOST dB)"
 }
 
 # The PCM device the HAL's car-kit loopback must open: the front end that "hfp-sco" feeds
@@ -495,6 +558,7 @@ set_key() {
     MEDIA_SINK=0|MEDIA_SINK=1) MEDIA_SINK=$2 ;;
     HFP_AG=auto|HFP_AG=keep|HFP_AG=off) HFP_AG=$2 ;;
     CALL_HANDLER=auto|CALL_HANDLER=system|CALL_HANDLER=cabin) CALL_HANDLER=$2 ;;
+    MIC_BOOST=0|MIC_BOOST=6|MIC_BOOST=12|MIC_BOOST=18|MIC_BOOST=24) MIC_BOOST=$2 ;;
     *) return 1 ;;
   esac
 }
@@ -512,6 +576,7 @@ status() {
   echo "call audio:  $CALL_AUDIO"
   echo "media sink:  $MEDIA_SINK"
   echo "hfp ag:      $HFP_AG"
+  echo "mic boost:   +${MIC_BOOST} dB (car-kit calls)"
   echo "calls via:   $CALL_HANDLER ($(cabin_handles_calls && echo cabin || echo system))"
   echo "modem:       $(modem_kind)"
   echo "bluetooth:   $(bt_pkg), on=$(settings get global bluetooth_on 2>/dev/null)"
@@ -537,6 +602,7 @@ case "$cmd" in
   boot-props)
     save_orig
     set_props -n
+    save_stock_mixers
     patch_mixer_paths
     ;;
   boot)
@@ -564,7 +630,7 @@ case "$cmd" in
     key=$1
     val=$2
     case "$key" in
-      MODE|CALL_AUDIO|MEDIA_SINK|HFP_AG|CALL_HANDLER) ;;
+      MODE|CALL_AUDIO|MEDIA_SINK|HFP_AG|CALL_HANDLER|MIC_BOOST) ;;
       *) echo "cabin: unknown setting $key" >&2; log "rejected key"; exit 2 ;;
     esac
     old_mode=$MODE
@@ -577,6 +643,7 @@ case "$cmd" in
     new_val=$(eval "echo \$$key")
     [ "$key" = MODE ] && { old_val=$old_mode; new_val=$MODE; }
     if needs_restart "$key" && [ "$old_val" != "$new_val" ]; then apply restart; else apply; fi
+    [ "$key" = MIC_BOOST ] && [ "$old_val" != "$new_val" ] && refresh_audio
     echo "Cabin: $key=$new_val"
     ;;
   restart-bt)
@@ -584,6 +651,10 @@ case "$cmd" in
     ;;
   save-mixer)
     save_mixer_ctls
+    ;;
+  refresh-audio)
+    refresh_audio
+    notify_app
     ;;
   sap-report)
     sap_report
@@ -595,7 +666,7 @@ case "$cmd" in
     status
     ;;
   *)
-    sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'
     exit 1
     ;;
 esac
