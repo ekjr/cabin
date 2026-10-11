@@ -1,6 +1,0 @@
-id=btsco_wb_fix
-name=BT SCO wideband sample-rate fix (Qualcomm)
-version=1.0.0
-versionCode=1
-author=ekjr
-description=Fixes Bluetooth HD-voice (mSBC) audio routes whose sample rate is written as "16000" instead of BTSCO_RATE_16KHZ, which the audio chip rejects. Stock files are never changed.
