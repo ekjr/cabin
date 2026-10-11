@@ -3,7 +3,7 @@
 #
 #   cabin on | off | toggle        turn Cabin on (last mode) / off / flip
 #   cabin hfp | sap                switch mode (and turn on)
-#   cabin set KEY VALUE            CALL_AUDIO tablet|phone, MEDIA_SINK 0|1, HFP_AG keep|off
+#   cabin set KEY VALUE            CALL_AUDIO tablet|phone, MEDIA_SINK 0|1, HFP_AG auto|keep|off
 #   cabin status                   show mode, settings and Bluetooth profile state
 #   cabin restart-bt               restart Bluetooth so profile changes take effect
 #   cabin sap-report               what this device's modem offers for SAP mode
@@ -18,7 +18,6 @@ CONF=$DATA/config
 ORIG=$DATA/orig.prop
 LOG=$DATA/cabin.log
 PKG=com.cabin.bridge
-OVERLAY=com.cabin.btoverlay
 API=$(getprop ro.build.version.sdk)
 
 # Every property Cabin may touch. Stock values are saved at each boot so "off" can restore them.
@@ -60,7 +59,7 @@ load_conf() {
   LAST_ON=hfp
   CALL_AUDIO=tablet
   MEDIA_SINK=0
-  HFP_AG=keep
+  HFP_AG=auto
   [ -f "$CONF" ] || return 0
   while IFS='=' read -r k v; do
     case "$k" in
@@ -68,7 +67,7 @@ load_conf() {
       LAST_ON) case "$v" in hfp|sap) LAST_ON=$v ;; esac ;;
       CALL_AUDIO) case "$v" in tablet|phone) CALL_AUDIO=$v ;; esac ;;
       MEDIA_SINK) case "$v" in 0|1) MEDIA_SINK=$v ;; esac ;;
-      HFP_AG) case "$v" in keep|off) HFP_AG=$v ;; esac ;;
+      HFP_AG) case "$v" in auto|keep|off) HFP_AG=$v ;; esac ;;
     esac
   done < "$CONF"
 }
@@ -122,7 +121,7 @@ set_props() {
     rp $1 bluetooth.profile.avrcp.controller.enabled true
     rp $1 bluetooth.profile.a2dp.source.enabled false
   fi
-  [ "$HFP_AG" = off ] && rp $1 bluetooth.profile.hfp.ag.enabled false
+  ag_off && rp $1 bluetooth.profile.hfp.ag.enabled false
   return 0
 }
 
@@ -133,37 +132,80 @@ bt_pkg() {
   echo com.android.bluetooth
 }
 
-HFP_CONNSERV="com.android.bluetooth.hfpclient.HfpClientConnectionService
-com.android.bluetooth.hfpclient.connserv.HfpClientConnectionService"
+# Bluetooth app components whose manifest "enabled" comes from the stock profile switches.
+# Android reads those once at install time, so neither the overlay nor the props can turn
+# them on; they have to be enabled by hand. Without AuthenticationService, Android refuses
+# the "Bluetooth contacts" account and the Bluetooth process crashes when the phone connects
+# (SecurityException: cannot explicitly add accounts of type com.android.bluetooth.pbapsink).
+CLIENT_COMPONENTS="com.android.bluetooth.hfpclient.HfpClientConnectionService
+com.android.bluetooth.hfpclient.connserv.HfpClientConnectionService
+com.android.bluetooth.pbapclient.AuthenticationService"
 
+# Only ever enable these; never put them back when Cabin turns off. Changing a component
+# makes Android kill the Bluetooth process, and once a "Bluetooth contacts" account exists,
+# Bluetooth needs AuthenticationService to remove it or it crash-loops
+# (SecurityException: cannot explicitly remove accounts of type ...pbapsink).
+# "Off" is done by bluetooth_disabled_profiles / the props, which stop the profiles themselves.
 set_components() {
+  [ "$MODE" = hfp ] || return 0
   bp=$(bt_pkg)
-  for c in $HFP_CONNSERV; do
-    if [ "$MODE" = hfp ]; then
-      pm enable "$bp/$c" >/dev/null 2>&1 && log "enabled $bp/$c"
-    else
-      pm default-state "$bp/$c" >/dev/null 2>&1
-    fi
+  for c in $CLIENT_COMPONENTS; do
+    pm enable "$bp/$c" >/dev/null 2>&1 && log "enabled $bp/$c"
   done
 }
 
-# Android 12 and older read profile support from the Bluetooth app's resources.
-# Returns 0 when the overlay state changed (Bluetooth needs a restart).
-set_overlay() {
-  [ "$API" -le 32 ] 2>/dev/null || return 1
-  cmd overlay list 2>/dev/null | grep -q "$OVERLAY" || return 1
-  if [ "$MODE" = hfp ]; then want=enable; else want=disable; fi
-  if cmd overlay list 2>/dev/null | grep -q "\[x\] $OVERLAY"; then have=enable; else have=disable; fi
+# Android 12 and older: a static overlay makes the client profiles available (props are
+# ignored there), and the Bluetooth app skips any profile whose bit is set in
+# Settings.Global bluetooth_disabled_profiles. That setting is the runtime on/off switch.
+# Bits are 1 << BluetoothProfile id: HEADSET(AG)=1, HEADSET_CLIENT=16, PBAP_CLIENT=17, MAP_CLIENT=18.
+AG_BIT=2
+CLIENT_BITS=$(( (1 << 16) | (1 << 17) | (1 << 18) ))
+uses_disabled_profiles() {
+  [ "$API" -le 32 ] 2>/dev/null
+}
+
+# AG (this device acting as a phone for headsets) off? "auto" = off where the stack
+# can't run AG and hands-free together (Android 12 and older).
+ag_off() {
+  [ "$HFP_AG" = off ] || { [ "$HFP_AG" = auto ] && uses_disabled_profiles; }
+}
+
+# Returns 0 when the setting changed (Bluetooth needs a restart).
+set_disabled_profiles() {
+  uses_disabled_profiles || return 1
+  [ -f "$DATA/orig.disabled_profiles" ] || {
+    v=$(settings get global bluetooth_disabled_profiles 2>/dev/null)
+    case "$v" in ''|null|*[!0-9]*) v=0 ;; esac
+    echo "$v" > "$DATA/orig.disabled_profiles"
+  }
+  stock=$(cat "$DATA/orig.disabled_profiles")
+  if [ "$MODE" = hfp ]; then
+    want=$(( stock & ~CLIENT_BITS ))
+    if ag_off; then want=$(( want | AG_BIT )); else want=$(( want & ~AG_BIT )); fi
+  else
+    want=$(( (stock | CLIENT_BITS) & ~AG_BIT | (stock & AG_BIT) ))
+  fi
+  have=$(settings get global bluetooth_disabled_profiles 2>/dev/null)
+  case "$have" in ''|null|*[!0-9]*) have=0 ;; esac
   [ "$want" = "$have" ] && return 1
-  cmd overlay "$want" --user 0 "$OVERLAY" >/dev/null 2>&1
-  log "overlay $want"
+  settings put global bluetooth_disabled_profiles "$want"
+  log "bluetooth_disabled_profiles $have -> $want"
   return 0
+}
+
+# "cmd bluetooth_manager" only exists on Android 13+. Older versions print
+# "No shell command implementation" and still exit 0, so pick by API level.
+bt_power() {
+  if [ "$API" -ge 33 ] 2>/dev/null; then
+    cmd bluetooth_manager "$1" >/dev/null 2>&1 && return
+  fi
+  svc bluetooth "$1" >/dev/null 2>&1
 }
 
 restart_bt() {
   on=$(settings get global bluetooth_on 2>/dev/null)
   log "restarting bluetooth (was $on)"
-  cmd bluetooth_manager disable >/dev/null 2>&1 || svc bluetooth disable >/dev/null 2>&1
+  bt_power disable
   i=0
   while [ $i -lt 8 ]; do
     [ "$(settings get global bluetooth_on 2>/dev/null)" = 0 ] && break
@@ -176,7 +218,7 @@ restart_bt() {
   done
   sleep 2
   if [ "$on" != 0 ]; then
-    cmd bluetooth_manager enable >/dev/null 2>&1 || svc bluetooth enable >/dev/null 2>&1
+    bt_power enable
   fi
 }
 
@@ -215,6 +257,7 @@ report() {
     status
     echo; echo "===== OVERLAY"
     cmd overlay list --user 0 2>/dev/null | grep -i cabin
+    echo "bluetooth_disabled_profiles=$(settings get global bluetooth_disabled_profiles 2>/dev/null) (stock: $(cat "$DATA/orig.disabled_profiles" 2>/dev/null))"
     for r in profile_supported_hfpclient hfp_client_connection_service_enabled \
       profile_supported_pbapclient profile_supported_mapmce profile_supported_hs_hfp; do
       echo "$r=$(cmd overlay lookup "$bp" "$bp:bool/$r" 2>/dev/null)"
@@ -266,7 +309,7 @@ apply() {
   save_conf
   set_props
   set_components
-  set_overlay && [ "$1" != restart ] && restart_bt
+  set_disabled_profiles && [ "$1" != restart ] && restart_bt
   [ "$1" = restart ] && restart_bt
   describe
   notify_app
@@ -289,7 +332,7 @@ set_key() {
     MODE=*) set_mode "$2" ;;
     CALL_AUDIO=tablet|CALL_AUDIO=phone) CALL_AUDIO=$2 ;;
     MEDIA_SINK=0|MEDIA_SINK=1) MEDIA_SINK=$2 ;;
-    HFP_AG=keep|HFP_AG=off) HFP_AG=$2 ;;
+    HFP_AG=auto|HFP_AG=keep|HFP_AG=off) HFP_AG=$2 ;;
     *) return 1 ;;
   esac
 }
@@ -334,7 +377,7 @@ case "$cmd" in
     ;;
   boot)
     set_components
-    set_overlay && restart_bt
+    set_disabled_profiles && restart_bt
     describe
     notify_app
     ;;

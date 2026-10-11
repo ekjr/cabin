@@ -29,6 +29,8 @@ choose() {
 
 mkdir -p "$DATA"
 if [ -f "$DATA/config" ]; then
+  # v2.0.0/2.0.1 defaulted HFP_AG to keep; auto is the safe default now.
+  sed -i 's/^HFP_AG=keep$/HFP_AG=auto/' "$DATA/config"
   ui_print "  Keeping your current settings:"
   sed 's/^/    /' "$DATA/config" | while read -r line; do ui_print "$line"; done
 else
@@ -40,7 +42,7 @@ else
   choose
   [ $? -eq 1 ] && mode=sap
   ui_print "  -> $mode"
-  printf 'MODE=%s\nLAST_ON=%s\nCALL_AUDIO=tablet\nMEDIA_SINK=0\nHFP_AG=keep\n' "$mode" "$mode" > "$DATA/config"
+  printf 'MODE=%s\nLAST_ON=%s\nCALL_AUDIO=tablet\nMEDIA_SINK=0\nHFP_AG=auto\n' "$mode" "$mode" > "$DATA/config"
 fi
 
 set_perm_recursive "$MODPATH" 0 0 0755 0644

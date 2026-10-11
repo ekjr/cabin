@@ -2,6 +2,8 @@
 <!-- Android 12 and older: turn on the car-kit profiles in the Bluetooth app's config. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.cabin.btoverlay">
-    <overlay android:targetPackage="com.android.bluetooth" android:isStatic="false" />
+    <!-- Static: on Android 11 a runtime-enabled overlay never reached the Bluetooth process.
+         Cabin switches the profiles on/off with bluetooth_disabled_profiles instead. -->
+    <overlay android:targetPackage="com.android.bluetooth" android:isStatic="true" android:priority="1" />
     <application android:hasCode="false" />
 </manifest>

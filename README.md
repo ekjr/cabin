@@ -33,7 +33,7 @@ Other settings (`su -c cabin set KEY VALUE`):
 |---|---|---|
 | `CALL_AUDIO` | `tablet` (default) / `phone` | Where you hear the call. Use `phone` when the phone is also on a car's Android Auto, so call audio stays in the car. |
 | `MEDIA_SINK` | `0` (default) / `1` | Also play the phone's music on the tablet (A2DP sink). Keep `0` with Android Auto. While on, Bluetooth headphones on the tablet won't work. Android 13+ only. |
-| `HFP_AG` | `keep` (default) / `off` | Turns off the tablet's own headset-side profile. Try `off` if the phone won't connect "for calls". On Android 12 and older it is always off while Cabin is on, because those Bluetooth stacks can't run both roles. |
+| `HFP_AG` | `auto` (default) / `keep` / `off` | The device's own headset-side role (its Bluetooth headsets, car). `auto` turns it off while Cabin is on for Android 12 and older, because those stacks can't run both roles, and keeps it on Android 13+. `off` forces it off; try that if the phone won't connect "for calls". |
 
 ## Install
 
@@ -76,8 +76,9 @@ access** in the app to check this. Two limits:
   Dialer and Messaging apps or QKSMS/Fossify work. Some SMS apps refuse to compose without a SIM.
 - On Android 13+ the system's own hands-free calling account usually handles calls, and Cabin keeps
   it enabled. On older ROMs without it, Cabin registers its own calling account as a fallback.
-- Android 12 and older: profiles are turned on through a resource overlay (`CabinBtOverlay.apk`),
-  because those versions ignore the properties.
+- Android 12 and older: a static resource overlay (`CabinBtOverlay.apk`) makes the client profiles
+  available, because those versions ignore the properties. Cabin turns them on and off by changing
+  `bluetooth_disabled_profiles`, which the Bluetooth app reads at start.
 
 ## How it works
 
