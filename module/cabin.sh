@@ -197,6 +197,8 @@ has_ctl() {
 #     whose control does exist (PRI_MI2S_RX there).
 #  3. The port's hostless downlink switch ("<PORT>_DL_HL Switch") is missing from the path,
 #     so the downlink never starts. Add it when the kernel has it.
+#  4. With the call on the earpiece the HAL looks up "hfp-sco handset", which isn't defined,
+#     so none of the car-kit switches get set. Alias it to "hfp-sco".
 patch_mixer_paths() {
   out=$MODDIR/system/vendor/etc
   rm -f "$out"/mixer_paths*.xml
@@ -220,6 +222,13 @@ patch_mixer_paths() {
         changed="aliases $spk/$mic"
       fi
     fi
+
+    for base in hfp-sco hfp-sco-wb; do
+      grep -q "<path name=\"$base\">" "$tmp" || continue
+      grep -q "<path name=\"$base handset\">" "$tmp" && continue
+      sed -i "s|</mixer>|    <path name=\"$base handset\">\n        <path name=\"$base\" />\n    </path>\n</mixer>|" "$tmp"
+      changed="$changed, +$base handset"
+    done
 
     if [ -f "$MIXER_CTLS" ]; then
       hfp=$(sed -n '/<path name="hfp-sco/,/<\/path>/p' "$tmp")

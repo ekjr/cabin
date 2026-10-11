@@ -388,9 +388,13 @@ public class LinkService extends Service {
      * which leaves calls silent. The module's cabin script finds the right one at boot.
      */
     private void applyHfpPcmDevice() {
-        String id = Prefs.get(this).getString("hfp_pcm_dev_id", "");
+        applyHfpPcmDevice(this);
+    }
+
+    static void applyHfpPcmDevice(Context context) {
+        String id = Prefs.get(context).getString("hfp_pcm_dev_id", "");
         if (id == null || !id.matches("[0-9]+")) return;
-        android.media.AudioManager am = getSystemService(android.media.AudioManager.class);
+        android.media.AudioManager am = context.getSystemService(android.media.AudioManager.class);
         if (am != null) am.setParameters("hfp_pcm_dev_id=" + id);
     }
 

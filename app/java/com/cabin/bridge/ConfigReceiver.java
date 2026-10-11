@@ -22,6 +22,7 @@ public class ConfigReceiver extends BroadcastReceiver {
         if (intent.hasExtra("media_sink")) e.putBoolean("media_sink", intent.getBooleanExtra("media_sink", false));
         e.remove("pending");
         e.commit();
+        LinkService.applyHfpPcmDevice(context);
         apply(context);
     }
 
