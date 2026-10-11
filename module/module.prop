@@ -1,6 +1,6 @@
 id=cabin
 name=Cabin - phone calls and texts over Bluetooth
-version=2.1.0
-versionCode=220
+version=2.1.1
+versionCode=221
 author=ekjr
 description=Turns this tablet into a hands-free car kit for your phone. Calls and texts open in the native Phone and Messages apps. Tap Action to turn on/off.

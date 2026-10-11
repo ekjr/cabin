@@ -11,6 +11,10 @@ public abstract class XC_MethodHook {
         public java.lang.reflect.Member method;
         public Object thisObject;
         public Object[] args;
+
+        public void setResult(Object result) {
+            throw new UnsupportedOperationException("stub");
+        }
     }
 
     public class Unhook {

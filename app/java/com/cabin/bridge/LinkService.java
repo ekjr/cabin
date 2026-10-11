@@ -150,6 +150,30 @@ public class LinkService extends Service {
         Log.i(BtReflect.TAG, "hangup: " + (call != null ? "terminateCall=" : "rejectCall=") + ok);
     }
 
+    /** Sends a text through the phone. Used by texts handed over from the SMS app. */
+    static boolean sendText(String address, String text) {
+        LinkService s = self;
+        if (s == null || s.map == null || address == null || text == null) {
+            Log.w(BtReflect.TAG, "sendText: Cabin's message link is not ready");
+            return false;
+        }
+        LinkService r = ready("sendText");
+        if (r == null) return false;
+        String to = normalizeNumber(address);
+        boolean ok = BtReflect.sendMessage(s.map, r.phone, to, text);
+        if (ok) s.rememberText(to, text, true);
+        return ok;
+    }
+
+    /** "+1-646-820-8701" -> "+16468208701", so texts and replies share one conversation. */
+    static String normalizeNumber(String address) {
+        if (address == null) return null;
+        String trimmed = address.trim();
+        if (!trimmed.matches("[+0-9()\\-. ]+")) return trimmed;  // email or name: leave as is
+        String digits = trimmed.replaceAll("[^0-9]", "");
+        return trimmed.startsWith("+") ? "+" + digits : digits;
+    }
+
     static boolean dial(String number) {
         LinkService s = ready("dial");
         if (s == null || number == null) return false;
@@ -502,7 +526,7 @@ public class LinkService extends Service {
 
     private String senderAddress(Intent intent) {
         String uri = intent.getStringExtra(BtReflect.EXTRA_SENDER_URI);
-        if (uri != null && uri.startsWith("tel:")) return Uri.parse(uri).getSchemeSpecificPart();
+        if (uri != null && uri.startsWith("tel:")) return normalizeNumber(Uri.parse(uri).getSchemeSpecificPart());
         String name = intent.getStringExtra(BtReflect.EXTRA_SENDER_NAME);
         if (name != null && name.trim().length() > 0) return name.trim();
         return "Unknown";

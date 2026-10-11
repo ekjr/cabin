@@ -101,6 +101,16 @@
             </intent-filter>
         </receiver>
 
+        <!-- Texts from Cabin's LSPosed hook in the SMS app; only apps that may send SMS. -->
+        <receiver
+            android:name=".SendTextReceiver"
+            android:exported="true"
+            android:permission="android.permission.SEND_SMS">
+            <intent-filter>
+                <action android:name="com.cabin.bridge.SEND_TEXT" />
+            </intent-filter>
+        </receiver>
+
         <receiver
             android:name=".CallActionReceiver"
             android:exported="false" />
