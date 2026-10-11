@@ -4,7 +4,8 @@
 #   cabin on | off | toggle        turn Cabin on (last mode) / off / flip
 #   cabin hfp | sap                switch mode (and turn on)
 #   cabin set KEY VALUE            CALL_AUDIO tablet|phone, MEDIA_SINK 0|1, HFP_AG auto|keep|off,
-#                                  CALL_HANDLER auto|system|cabin, MIC_BOOST 0|6|12|18|24
+#                                  CALL_HANDLER auto|system|cabin, MIC_BOOST 0|6|12|18|24,
+#                                  HFP_MIC single|dual
 #   cabin status                   show mode, settings and Bluetooth profile state
 #   cabin restart-bt               restart Bluetooth so profile changes take effect
 #   cabin sap-report               what this device's modem offers for SAP mode
@@ -64,6 +65,7 @@ load_conf() {
   HFP_AG=auto
   CALL_HANDLER=auto
   MIC_BOOST=12
+  HFP_MIC=single
   [ -f "$CONF" ] || return 0
   while IFS='=' read -r k v; do
     case "$k" in
@@ -74,6 +76,7 @@ load_conf() {
       HFP_AG) case "$v" in auto|keep|off) HFP_AG=$v ;; esac ;;
       CALL_HANDLER) case "$v" in auto|system|cabin) CALL_HANDLER=$v ;; esac ;;
       MIC_BOOST) case "$v" in 0|6|12|18|24) MIC_BOOST=$v ;; esac ;;
+      HFP_MIC) case "$v" in single|dual) HFP_MIC=$v ;; esac ;;
     esac
   done < "$CONF"
 }
@@ -87,6 +90,7 @@ MEDIA_SINK=$MEDIA_SINK
 HFP_AG=$HFP_AG
 CALL_HANDLER=$CALL_HANDLER
 MIC_BOOST=$MIC_BOOST
+HFP_MIC=$HFP_MIC
 EOF
   mv "$CONF.tmp" "$CONF"
 }
@@ -212,6 +216,10 @@ has_ctl() {
 #     so the downlink never starts. Add it when the kernel has it.
 #  4. With the call on the earpiece the HAL looks up "hfp-sco handset", which isn't defined,
 #     so none of the car-kit switches get set. Alias it to "hfp-sco".
+#  6. On the earpiece the HAL picks the dual-mic device, built for the voice DSP's
+#     beamforming; without the DSP the far mic just adds room noise. With HFP_MIC=single,
+#     "hfp-sco handset" turns the second decimator off and capture back to mono, leaving
+#     the main (bottom) mic. Speakerphone keeps its own mic.
 #  5. Car-kit calls skip the voice DSP, which normally adds mic gain, so the other side hears
 #     you quietly. Raise the codec's mic gain (DECn Volume) by MIC_BOOST dB, in "hfp-sco"
 #     only, so it applies during car-kit calls and resets after.
@@ -261,11 +269,18 @@ patch_mixer_paths() {
       fi
     fi
 
+    single=
+    if [ "$HFP_MIC" = single ]; then
+      for c in "DEC2 MUX" "MI2S_TX Channels"; do
+        def=$(sed -n "/<mixer>/,/<path /s/.*<ctl name=\"$c\" value=\"\([^\"]*\)\".*/\1/p" "$tmp" | head -1)
+        [ -n "$def" ] && single="$single\n        <ctl name=\"$c\" value=\"$def\" />"
+      done
+    fi
     for base in hfp-sco hfp-sco-wb; do
       grep -q "<path name=\"$base\">" "$tmp" || continue
       grep -q "<path name=\"$base handset\">" "$tmp" && continue
-      sed -i "s|</mixer>|    <path name=\"$base handset\">\n        <path name=\"$base\" />\n    </path>\n</mixer>|" "$tmp"
-      changed="$changed, +$base handset"
+      sed -i "s|</mixer>|    <path name=\"$base handset\">\n        <path name=\"$base\" />$single\n    </path>\n</mixer>|" "$tmp"
+      changed="$changed, +$base handset${single:+ (single mic)}"
     done
 
     if [ "$MIC_BOOST" -gt 0 ] 2>/dev/null && grep -q '<path name="hfp-sco">' "$tmp"; then
@@ -559,6 +574,7 @@ set_key() {
     HFP_AG=auto|HFP_AG=keep|HFP_AG=off) HFP_AG=$2 ;;
     CALL_HANDLER=auto|CALL_HANDLER=system|CALL_HANDLER=cabin) CALL_HANDLER=$2 ;;
     MIC_BOOST=0|MIC_BOOST=6|MIC_BOOST=12|MIC_BOOST=18|MIC_BOOST=24) MIC_BOOST=$2 ;;
+    HFP_MIC=single|HFP_MIC=dual) HFP_MIC=$2 ;;
     *) return 1 ;;
   esac
 }
@@ -577,6 +593,7 @@ status() {
   echo "media sink:  $MEDIA_SINK"
   echo "hfp ag:      $HFP_AG"
   echo "mic boost:   +${MIC_BOOST} dB (car-kit calls)"
+  echo "earpiece mic: $HFP_MIC (car-kit calls)"
   echo "calls via:   $CALL_HANDLER ($(cabin_handles_calls && echo cabin || echo system))"
   echo "modem:       $(modem_kind)"
   echo "bluetooth:   $(bt_pkg), on=$(settings get global bluetooth_on 2>/dev/null)"
@@ -630,7 +647,7 @@ case "$cmd" in
     key=$1
     val=$2
     case "$key" in
-      MODE|CALL_AUDIO|MEDIA_SINK|HFP_AG|CALL_HANDLER|MIC_BOOST) ;;
+      MODE|CALL_AUDIO|MEDIA_SINK|HFP_AG|CALL_HANDLER|MIC_BOOST|HFP_MIC) ;;
       *) echo "cabin: unknown setting $key" >&2; log "rejected key"; exit 2 ;;
     esac
     old_mode=$MODE
@@ -643,7 +660,7 @@ case "$cmd" in
     new_val=$(eval "echo \$$key")
     [ "$key" = MODE ] && { old_val=$old_mode; new_val=$MODE; }
     if needs_restart "$key" && [ "$old_val" != "$new_val" ]; then apply restart; else apply; fi
-    [ "$key" = MIC_BOOST ] && [ "$old_val" != "$new_val" ] && refresh_audio
+    case "$key" in MIC_BOOST|HFP_MIC) [ "$old_val" != "$new_val" ] && refresh_audio ;; esac
     echo "Cabin: $key=$new_val"
     ;;
   restart-bt)
@@ -666,7 +683,7 @@ case "$cmd" in
     status
     ;;
   *)
-    sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'
     exit 1
     ;;
 esac
