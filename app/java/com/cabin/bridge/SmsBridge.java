@@ -8,8 +8,6 @@ import android.net.Uri;
 import android.util.Base64;
 import android.util.Log;
 
-import java.io.File;
-import java.io.FileOutputStream;
 import java.nio.charset.Charset;
 
 /**
@@ -19,16 +17,16 @@ import java.nio.charset.Charset;
  */
 final class SmsBridge {
     private static final Uri SMS = Uri.parse("content://sms");
-    private static int seq;
-
     private SmsBridge() {}
 
     static boolean insertInbox(Context context, String address, String body, long when) {
         if (body == null || body.length() == 0) return false;
         if (address == null || address.length() == 0) address = "Unknown";
+        // Newer Bluetooth stacks may already have stored this text themselves.
+        if (alreadyStored(context, address, body, when)) return true;
         ContentValues cv = values(address, body, when, 1);
         if (insert(context.getContentResolver(), inboxUri(), cv)) return true;
-        return enqueue(context, "op=insert\n"
+        return RootQueue.enqueue(context, "op=insert\n"
                 + "ab=" + b64(address) + "\n"
                 + "bb=" + b64(body) + "\n"
                 + "date=" + when + "\n"
@@ -41,7 +39,7 @@ final class SmsBridge {
         ContentValues cv = values(address, body, when, 2);
         cv.put("read", 1);
         if (insert(context.getContentResolver(), Uri.parse("content://sms/sent"), cv)) return true;
-        return enqueue(context, "op=insert\n"
+        return RootQueue.enqueue(context, "op=insert\n"
                 + "ab=" + b64(address) + "\n"
                 + "bb=" + b64(body) + "\n"
                 + "date=" + when + "\n"
@@ -59,7 +57,7 @@ final class SmsBridge {
         } catch (Throwable t) {
             Log.w(BtReflect.TAG, "markSent direct failed", t);
         }
-        return enqueue(context, "op=update\nid=" + id + "\ntype=2\n");
+        return RootQueue.enqueue(context, "op=update\nid=" + id + "\ntype=2\n");
     }
 
     static Cursor outbox(Context context) {
@@ -69,6 +67,20 @@ final class SmsBridge {
                 "type IN (4,5,6)",
                 null,
                 "date DESC LIMIT 15");
+    }
+
+    private static boolean alreadyStored(Context context, String address, String body, long when) {
+        Cursor c = null;
+        try {
+            c = context.getContentResolver().query(inboxUri(), new String[]{"_id"},
+                    "address = ? AND body = ? AND date > ?",
+                    new String[]{address, body, String.valueOf(when - 10 * 60 * 1000L)}, null);
+            return c != null && c.getCount() > 0;
+        } catch (Throwable t) {
+            return false;
+        } finally {
+            if (c != null) c.close();
+        }
     }
 
     private static Uri inboxUri() {
@@ -94,27 +106,6 @@ final class SmsBridge {
             return result != null;
         } catch (Throwable t) {
             Log.w(BtReflect.TAG, "sms insert needs root helper", t);
-            return false;
-        }
-    }
-
-    private static boolean enqueue(Context context, String payload) {
-        try {
-            File dir = new File(context.getFilesDir(), "cabin-queue");
-            if (!dir.exists() && !dir.mkdirs()) return false;
-            int n;
-            synchronized (SmsBridge.class) {
-                n = ++seq;
-            }
-            File tmp = new File(dir, System.currentTimeMillis() + "-" + n + ".tmp");
-            File dst = new File(dir, tmp.getName().replace(".tmp", ".req"));
-            FileOutputStream fos = new FileOutputStream(tmp);
-            fos.write(payload.getBytes(Charset.forName("UTF-8")));
-            fos.flush();
-            fos.close();
-            return tmp.renameTo(dst);
-        } catch (Throwable t) {
-            Log.e(BtReflect.TAG, "enqueue sms failed", t);
             return false;
         }
     }

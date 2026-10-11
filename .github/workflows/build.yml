@@ -1,0 +1,40 @@
+name: build
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+jobs:
+  module:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: "platforms;android-34 build-tools;34.0.0"
+      - name: Restore signing key
+        env:
+          KEYSTORE_B64: ${{ secrets.CABIN_KEYSTORE_B64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then mkdir -p signing; echo "$KEYSTORE_B64" | base64 -d > signing/cabin.jks; fi
+      - name: Build
+        env:
+          KS_PASS: ${{ secrets.CABIN_KS_PASS || 'cabin-module' }}
+        run: ANDROID_JAR=$ANDROID_HOME/platforms/android-34/android.jar ./build.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cabin-module
+          path: build/Cabin-v*.zip
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/Cabin-v*.zip
+          generate_release_notes: true

@@ -1,9 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Must list every privileged permission in the app manifest, or devices that
+     enforce privapp permissions will not boot. -->
 <permissions>
     <privapp-permissions package="com.cabin.bridge">
         <permission name="android.permission.BLUETOOTH_PRIVILEGED"/>
         <permission name="android.permission.MODIFY_PHONE_STATE"/>
         <permission name="android.permission.READ_PRIVILEGED_PHONE_STATE"/>
-        <permission name="android.permission.WRITE_SMS"/>
     </privapp-permissions>
 </permissions>
