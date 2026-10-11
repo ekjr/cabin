@@ -18,6 +18,7 @@ public class ConfigReceiver extends BroadcastReceiver {
         copy(intent, e, "call_audio");
         copy(intent, e, "hfp_ag");
         copy(intent, e, "modem");
+        copy(intent, e, "hfp_pcm_dev_id");
         if (intent.hasExtra("media_sink")) e.putBoolean("media_sink", intent.getBooleanExtra("media_sink", false));
         e.remove("pending");
         e.commit();

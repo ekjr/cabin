@@ -174,33 +174,97 @@ set_components() {
   done
 }
 
-# Qualcomm audio HALs route car-kit (HFP client) calls to the "voice-speaker-hfp" /
-# "voice-speaker-mic-hfp" devices. Many phone/tablet mixer_paths files never define them,
-# so the call connects with no sound ("audio_route: unable to find path"). Add them as
-# aliases of the device's own speakerphone paths. Runs in post-fs-data, before Magisk
-# mounts the module, so it always starts from the stock files and follows OTA updates.
+# Kernel mixer controls, saved while the system is up (install time and every boot), so
+# post-fs-data can check which controls really exist before the sound card is ready.
+MIXER_CTLS=$DATA/mixer_ctls.txt
+save_mixer_ctls() {
+  command -v tinymix >/dev/null 2>&1 || return 0
+  tinymix 2>/dev/null > "$MIXER_CTLS.tmp" && [ -s "$MIXER_CTLS.tmp" ] && mv "$MIXER_CTLS.tmp" "$MIXER_CTLS"
+  rm -f "$MIXER_CTLS.tmp"
+}
+
+has_ctl() {
+  [ -f "$MIXER_CTLS" ] && grep -qF "	$1 " "$MIXER_CTLS"
+}
+
+# Car-kit (HFP client) call audio on Qualcomm audio HALs, fixed up from the device's own
+# mixer_paths files. Runs in post-fs-data, before Magisk mounts the module, so it always
+# starts from the stock files and follows OTA updates. Found on an Android 11 msm8937 phone:
+#  1. The HAL routes these calls to "voice-speaker-hfp" / "voice-speaker-mic-hfp", which
+#     phone/tablet files often never define. Alias them to the speakerphone paths.
+#  2. "hfp-sco" may name a "<PORT> Port Mixer INTERNAL_BT_SCO_TX" control the kernel lacks
+#     (QUIN_MI2S_RX there), so the caller is never heard. Use a port from a sibling hfp path
+#     whose control does exist (PRI_MI2S_RX there).
+#  3. The port's hostless downlink switch ("<PORT>_DL_HL Switch") is missing from the path,
+#     so the downlink never starts. Add it when the kernel has it.
 patch_mixer_paths() {
   out=$MODDIR/system/vendor/etc
   rm -f "$out"/mixer_paths*.xml
   for f in /vendor/etc/mixer_paths*.xml; do
     [ -f "$f" ] || continue
-    grep -q '<path name="voice-speaker-hfp"' "$f" && continue
-    spk=; mic=
-    for p in voice-speaker speaker; do
-      grep -q "<path name=\"$p\">" "$f" && { spk=$p; break; }
-    done
-    for p in voice-speaker-mic speaker-mic handset-mic; do
-      grep -q "<path name=\"$p\">" "$f" && { mic=$p; break; }
-    done
-    [ -n "$spk" ] && [ -n "$mic" ] || continue
-    mkdir -p "$out"
-    sed "s|</mixer>|    <path name=\"voice-speaker-hfp\">\n        <path name=\"$spk\" />\n    </path>\n    <path name=\"voice-speaker-mic-hfp\">\n        <path name=\"$mic\" />\n    </path>\n</mixer>|" \
-      "$f" > "$out/${f##*/}"
-    chmod 0644 "$out/${f##*/}"
-    ctx=$(ls -Z "$f" 2>/dev/null | awk '{print $1}')
-    [ -n "$ctx" ] && chcon "$ctx" "$out/${f##*/}" 2>/dev/null
-    log "mixer paths: ${f##*/} + voice-speaker-hfp=$spk, voice-speaker-mic-hfp=$mic"
+    name=${f##*/}
+    tmp=$DATA/$name.tmp
+    cp "$f" "$tmp"
+    changed=
+
+    if ! grep -q '<path name="voice-speaker-hfp"' "$tmp"; then
+      spk=; mic=
+      for p in voice-speaker speaker; do
+        grep -q "<path name=\"$p\">" "$tmp" && { spk=$p; break; }
+      done
+      for p in voice-speaker-mic speaker-mic handset-mic; do
+        grep -q "<path name=\"$p\">" "$tmp" && { mic=$p; break; }
+      done
+      if [ -n "$spk" ] && [ -n "$mic" ]; then
+        sed -i "s|</mixer>|    <path name=\"voice-speaker-hfp\">\n        <path name=\"$spk\" />\n    </path>\n    <path name=\"voice-speaker-mic-hfp\">\n        <path name=\"$mic\" />\n    </path>\n</mixer>|" "$tmp"
+        changed="aliases $spk/$mic"
+      fi
+    fi
+
+    if [ -f "$MIXER_CTLS" ]; then
+      hfp=$(sed -n '/<path name="hfp-sco/,/<\/path>/p' "$tmp")
+      ports=$(echo "$hfp" | sed -n 's/.*name="\([A-Z0-9_]*\) Port Mixer INTERNAL_BT_SCO_TX".*/\1/p' | sort -u)
+      good=
+      for p in $ports; do
+        has_ctl "$p Port Mixer INTERNAL_BT_SCO_TX" && { good=$p; break; }
+      done
+      for p in $ports; do
+        if ! has_ctl "$p Port Mixer INTERNAL_BT_SCO_TX" && [ -n "$good" ]; then
+          sed -i "s|\"$p Port Mixer INTERNAL_BT_SCO_TX\"|\"$good Port Mixer INTERNAL_BT_SCO_TX\"|" "$tmp"
+          changed="$changed, port $p->$good"
+        fi
+      done
+      hfp=$(sed -n '/<path name="hfp-sco/,/<\/path>/p' "$tmp")
+      for p in $(echo "$hfp" | sed -n 's/.*name="\([A-Z0-9_]*\) Port Mixer INTERNAL_BT_SCO_TX".*/\1/p' | sort -u); do
+        sw="${p}_DL_HL Switch"
+        has_ctl "$sw" || continue
+        echo "$hfp" | grep -qF "\"$sw\"" && continue
+        sed -i "s|^\([ 	]*\)<ctl name=\"$p Port Mixer INTERNAL_BT_SCO_TX\" value=\"1\" */>|&\n\1<ctl name=\"$sw\" value=\"1\" />|" "$tmp"
+        changed="$changed, +$sw"
+      done
+    fi
+
+    if [ -n "$changed" ]; then
+      mkdir -p "$out"
+      mv "$tmp" "$out/$name"
+      chmod 0644 "$out/$name"
+      ctx=$(ls -Z "$f" 2>/dev/null | awk '{print $1}')
+      [ -n "$ctx" ] && chcon "$ctx" "$out/$name" 2>/dev/null
+      log "mixer paths: $name: $changed"
+    else
+      rm -f "$tmp"
+    fi
   done
+}
+
+# The PCM device the HAL's car-kit loopback must open: the front end that "hfp-sco" feeds
+# ("INTERNAL_BT_SCO_RX Audio Mixer MultiMediaN"), looked up in the kernel's PCM list. The
+# HAL's built-in default (24 on that msm8937 build) may not exist. Empty if unknown.
+hfp_pcm_dev_id() {
+  fe=$(cat /vendor/etc/mixer_paths*.xml 2>/dev/null | sed -n '/<path name="hfp-sco">/,/<\/path>/p' \
+    | sed -n 's/.*INTERNAL_BT_SCO_RX Audio Mixer \(MultiMedia[0-9]*\)".*/\1/p' | head -1)
+  [ -n "$fe" ] || return 0
+  sed -n "s/^[0-9]*-0*\([0-9][0-9]*\): $fe (.*/\1/p" /proc/asound/pcm 2>/dev/null | head -1
 }
 
 # Android 12 and older: a static overlay makes the client profiles available (props are
@@ -341,7 +405,8 @@ notify_app() {
   if [ "$MEDIA_SINK" = 1 ]; then ms=true; else ms=false; fi
   am broadcast -f 0x20 -n "$PKG/.ConfigReceiver" -a com.cabin.bridge.CONFIG \
     --es mode "$MODE" --es last_on "$LAST_ON" --es call_audio "$CALL_AUDIO" \
-    --ez media_sink "$ms" --es hfp_ag "$HFP_AG" --es modem "$(modem_kind)" >/dev/null 2>&1
+    --ez media_sink "$ms" --es hfp_ag "$HFP_AG" --es modem "$(modem_kind)" \
+    --es hfp_pcm_dev_id "$(hfp_pcm_dev_id)" >/dev/null 2>&1
 }
 
 describe() {
@@ -428,6 +493,7 @@ case "$cmd" in
     patch_mixer_paths
     ;;
   boot)
+    save_mixer_ctls
     was_on=$(settings get global bluetooth_on 2>/dev/null)
     set_components
     set_disabled_profiles && restart_bt
@@ -467,6 +533,9 @@ case "$cmd" in
     ;;
   restart-bt)
     restart_bt
+    ;;
+  save-mixer)
+    save_mixer_ctls
     ;;
   sap-report)
     sap_report

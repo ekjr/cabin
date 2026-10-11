@@ -45,6 +45,11 @@ else
   printf 'MODE=%s\nLAST_ON=%s\nCALL_AUDIO=tablet\nMEDIA_SINK=0\nHFP_AG=auto\nCALL_HANDLER=auto\n' "$mode" "$mode" > "$DATA/config"
 fi
 
+# Save the kernel's mixer controls now, while the system is up; the audio fixes at the
+# next boot need them before the sound card is ready.
+mkdir -p "$DATA"
+CABIN_DATA=$DATA sh "$MODPATH/cabin.sh" save-mixer >/dev/null 2>&1
+
 set_perm_recursive "$MODPATH" 0 0 0755 0644
 set_perm "$MODPATH/system/bin/cabin" 0 2000 0755
 for f in cabin.sh cabind.sh action.sh service.sh post-fs-data.sh uninstall.sh; do

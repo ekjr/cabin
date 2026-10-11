@@ -215,6 +215,7 @@ public class LinkService extends Service {
             return;
         }
         adapter = BluetoothAdapter.getDefaultAdapter();
+        applyHfpPcmDevice();
         loadSeen();
         systemOwnsCalls = systemHandsFreeService();
         if (!systemOwnsCalls) registerOurAccount();
@@ -368,6 +369,7 @@ public class LinkService extends Service {
         android.media.AudioManager am = getSystemService(android.media.AudioManager.class);
         if (am == null) return;
         boolean wbs = intent.getBooleanExtra(BtReflect.EXTRA_AUDIO_WBS, false);
+        applyHfpPcmDevice();
         try {
             am.setParameters("hfp_set_sampling_rate=" + (wbs ? 16000 : 8000));
             am.setParameters("hfp_enable=true");
@@ -378,6 +380,18 @@ public class LinkService extends Service {
         } catch (Throwable t) {
             Log.w(BtReflect.TAG, "hfp audio routing failed", t);
         }
+    }
+
+    /**
+     * Tells a Qualcomm audio HAL which PCM device its car-kit loopback must open. Some builds
+     * default to one the kernel doesn't have ("cannot open device '/dev/snd/pcmC0D24p'"),
+     * which leaves calls silent. The module's cabin script finds the right one at boot.
+     */
+    private void applyHfpPcmDevice() {
+        String id = Prefs.get(this).getString("hfp_pcm_dev_id", "");
+        if (id == null || !id.matches("[0-9]+")) return;
+        android.media.AudioManager am = getSystemService(android.media.AudioManager.class);
+        if (am != null) am.setParameters("hfp_pcm_dev_id=" + id);
     }
 
     private void placeIncoming(int id, String number) {
