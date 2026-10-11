@@ -78,14 +78,40 @@ handle() {
   esac
 }
 
+process_queue() {
+  [ -d "$Q" ] || return 0
+  # Settings changes are applied once, last request wins: tapping on/off quickly
+  # shouldn't restart Bluetooth for every tap. Text inserts all run, in order.
+  pending=
+  for f in "$Q"/*.req; do
+    [ -e "$f" ] || continue
+    if grep -q '^op=set$' "$f"; then
+      k=$(sed -n 's/^key=//p' "$f")
+      v=$(sed -n 's/^value=//p' "$f")
+      pending=$(printf '%s\n' "$pending" | grep -v "^$k=")
+      pending=$(printf '%s\n%s=%s' "$pending" "$k" "$v")
+    else
+      handle "$f"
+    fi
+    rm -f "$f"
+  done
+  printf '%s\n' "$pending" | while IFS='=' read -r k v; do
+    [ -n "$k" ] || continue
+    log "app asks $k=$v"
+    sh "$MODDIR/cabin.sh" from-app "$k" "$v" >> "$LOG" 2>&1
+  done
+}
+
 log "helper start"
 while true; do
-  if [ -d "$Q" ]; then
-    for f in "$Q"/*.req; do
-      [ -e "$f" ] || continue
-      handle "$f"
-      rm -f "$f"
+  process_queue
+  if [ -d "$Q" ] && command -v inotifyd >/dev/null 2>&1; then
+    # React the moment the app drops a request (it writes a .tmp, then renames it to .req).
+    # Moved-in is "m" in toybox's inotifyd and "y" in busybox's; watch both, plus created.
+    inotifyd - "$Q:mny" 2>/dev/null | while read -r _ _ _; do
+      process_queue
     done
   fi
+  # inotifyd missing, or the queue dir isn't there yet / was removed: poll.
   sleep 1
 done

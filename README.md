@@ -44,6 +44,21 @@ Other settings (`su -c cabin set KEY VALUE`):
 4. On the phone, go to Bluetooth, pair with the tablet, and allow **calls, contacts and messages** (on Android phones also check "Text messages" under the device's settings).
 5. Open the Cabin app once and accept its permissions.
 
+## Texts on Android 11 and older (LSPosed)
+
+Android 11's Bluetooth app hands texts received from the phone only to the default SMS app, which
+ignores them, and SMS apps can't send without a SIM. Cabin fixes both with a small **LSPosed**
+module (it is one; no extra install):
+
+1. Install LSPosed (Zygisk) if you haven't.
+2. LSPosed → Modules → **Cabin** → enable, and tick **Bluetooth** and your **Messages** app
+   (`com.android.messaging` or Google Messages). Turn on "Show system apps" if they're hidden.
+3. Reboot, or restart Bluetooth and the Messages app.
+
+Then texts from your phone appear in the stock Messages app with a notification, and replies typed
+there go out through your phone. Only texts are handed to Cabin, and only when the device has no
+working SIM of its own.
+
 ## Android Auto
 
 There are two setups, and both work in HFP mode:
@@ -56,6 +71,10 @@ There are two setups, and both work in HFP mode:
   Set `CALL_AUDIO=phone` so the car keeps call audio, while the tablet still shows and controls calls and texts.
 
 ## SAP mode, honestly
+
+**Test SIM access** only checks that your phone will share its SIM: Cabin connects, reads the SIM's
+ID, and hands it back (your phone shows "sharing SIM" and loses signal for those seconds). It does
+not move your SIM onto this device.
 
 Android has no built-in SAP *client*, so Cabin includes one (`SapClient.java`). It connects to the
 phone's SIM Access server, reads the SIM's ATR and ICCID, then hands the SIM back. Use **Test SIM
@@ -77,8 +96,6 @@ answer, decline, hang up, earpiece and mute work.
   kernels can only send Bluetooth call audio to the earpiece's port (on the tested phone the
   loudspeaker's `QUIN_MI2S_RX` port has no Bluetooth input). There the call stays on the earpiece.
 
-- **Texts on Android 11 and older don't work yet.** The Bluetooth app there hands incoming texts
-  only to the default SMS app, which ignores them. Android 12+ stores them itself.
 - **Call audio depends on the audio HAL.** On Qualcomm HALs Cabin repairs what it can at boot:
   it adds the missing `voice-speaker-hfp` / `voice-speaker-mic-hfp` routes, swaps a car-kit route
   control the kernel doesn't have for one it does, adds the port's hostless switch, and tells the

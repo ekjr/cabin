@@ -130,6 +130,11 @@ set_props() {
 }
 
 bt_pkg() {
+  [ -s "$DATA/bt_pkg" ] && { cat "$DATA/bt_pkg"; return; }
+  bt_pkg_scan | tee "$DATA/bt_pkg"
+}
+
+bt_pkg_scan() {
   for p in com.android.bluetooth com.google.android.bluetooth; do
     pm path "$p" >/dev/null 2>&1 && { echo "$p"; return; }
   done
@@ -160,6 +165,10 @@ cabin_handles_calls() {
 # "Off" is done by bluetooth_disabled_profiles / the props, which stop the profiles themselves.
 set_components() {
   [ "$MODE" = hfp ] || return 0
+  # Already applied for this call handler? (Cleared at boot, so it's re-checked every boot.)
+  want="$(cabin_handles_calls && echo cabin || echo system)"
+  [ "$(cat "$DATA/components" 2>/dev/null)" = "$want" ] && return 0
+  echo "$want" > "$DATA/components"
   bp=$(bt_pkg)
   for c in $CLIENT_COMPONENTS; do
     case "$c" in
@@ -324,27 +333,55 @@ bt_power() {
   svc bluetooth "$1" >/dev/null 2>&1
 }
 
+# Milliseconds since a "date +%s%N" stamp (shell arithmetic here is 32-bit; awk isn't).
+ms_since() {
+  awk -v a="$1" -v b="$(date +%s%N)" 'BEGIN { printf "%d", (b - a) / 1000000 }'
+}
+
+bt_state() {
+  dumpsys bluetooth_manager 2>/dev/null | sed -n 's/^  state: //p' | head -1
+}
+
+# Waits up to $2 tenths of a second for "test $1" to succeed.
+wait_for() {
+  n=0
+  while [ $n -lt "$2" ]; do
+    eval "$1" && return 0
+    sleep 0.1
+    n=$((n + 1))
+  done
+  return 1
+}
+
+# Applies Bluetooth profile changes by restarting the Bluetooth process; Android brings it
+# straight back on (about 3 s, vs about 8 s for a full off/on cycle) and it re-reads its
+# profile config. If Bluetooth is off, nothing to do: the change applies when it's turned on.
 restart_bt() {
   on=$(settings get global bluetooth_on 2>/dev/null)
-  log "restarting bluetooth (was $on)"
-  bt_power disable
-  i=0
-  while [ $i -lt 8 ]; do
-    [ "$(settings get global bluetooth_on 2>/dev/null)" = 0 ] && break
-    sleep 1
-    i=$((i + 1))
-  done
-  # The Bluetooth process caches its profile config; make sure it starts fresh.
+  if [ "$on" = 0 ]; then
+    log "bluetooth is off; changes apply when it's turned on"
+    return 0
+  fi
+  t0=$(date +%s%N)
+  log "restarting bluetooth"
   for p in com.android.bluetooth com.google.android.bluetooth; do
     pid=$(pidof "$p" 2>/dev/null) && kill $pid 2>/dev/null
   done
-  sleep 2
-  if [ "$on" != 0 ]; then
+  sleep 0.5
+  if ! wait_for '[ "$(bt_state)" = ON ]' 60; then
+    log "bluetooth didn't come back on by itself; turning it on"
     bt_power enable
+    wait_for '[ "$(bt_state)" = ON ]' 60
   fi
+  log "bluetooth restarted in $(ms_since "$t0")ms"
 }
 
 modem_kind() {
+  [ -s "$DATA/modem" ] && { cat "$DATA/modem"; return; }
+  modem_kind_scan | tee "$DATA/modem"
+}
+
+modem_kind_scan() {
   if ! pm list features 2>/dev/null | grep -q '^feature:android.hardware.telephony$'; then
     echo none
   elif (lshal 2>/dev/null; service list 2>/dev/null) | grep -qi 'uim_remote\|uimremote'; then
@@ -435,7 +472,7 @@ apply() {
   set_disabled_profiles && [ "$1" != restart ] && restart_bt
   [ "$1" = restart ] && restart_bt
   describe
-  notify_app
+  notify_app &
   log "mode=$MODE call_audio=$CALL_AUDIO media_sink=$MEDIA_SINK hfp_ag=$HFP_AG"
 }
 
@@ -502,6 +539,7 @@ case "$cmd" in
     patch_mixer_paths
     ;;
   boot)
+    rm -f "$DATA/modem" "$DATA/bt_pkg" "$DATA/components"
     save_mixer_ctls
     was_on=$(settings get global bluetooth_on 2>/dev/null)
     set_components

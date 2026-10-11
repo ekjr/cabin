@@ -18,7 +18,10 @@ final class RootQueue {
 
     /** Ask the cabin script to change a setting: MODE, CALL_AUDIO, MEDIA_SINK or HFP_AG. */
     static boolean set(Context context, String key, String value) {
-        Prefs.get(context).edit().putString("pending", key + "=" + value).apply();
+        Prefs.get(context).edit()
+                .putString("pending", key + "=" + value)
+                .putLong("pending_at", System.currentTimeMillis())
+                .apply();
         return enqueue(context, "op=set\nkey=" + key + "\nvalue=" + value + "\n");
     }
 

@@ -88,6 +88,10 @@ public class LinkService extends Service {
             if (BtReflect.ACTION_CALL_CHANGED.equals(action)) {
                 Object call = intent.getParcelableExtra(BtReflect.EXTRA_CALL);
                 if (call != null) onCall(call);
+            } else if (BluetoothAdapter.ACTION_STATE_CHANGED.equals(action)) {
+                if (intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, -1) == BluetoothAdapter.STATE_ON) {
+                    reconnectSoon();
+                }
             } else if (BtReflect.ACTION_HFP_AUDIO.equals(action)) {
                 onHfpAudio(intent);
             } else if (BtReflect.ACTION_MAP_MESSAGE.equals(action)) {
@@ -368,6 +372,25 @@ public class LinkService extends Service {
         if (phone == null) phone = firstConnected(map);
         applyAudioPreference();
         if (systemOwnsCalls) enableSystemAccounts();
+    }
+
+    /**
+     * Bluetooth just came (back) on, e.g. after Cabin was switched on: reach out to the phone
+     * instead of waiting for it to reconnect by itself. Retried, since the profiles bind a
+     * moment after the adapter turns on.
+     */
+    private void reconnectSoon() {
+        for (long delay : new long[]{1000, 4000, 10000}) {
+            handler.postDelayed(new Runnable() {
+                @Override
+                public void run() {
+                    if (Prefs.MODE_HFP.equals(Prefs.mode(LinkService.this))) {
+                        attachBonded();
+                        publish();
+                    }
+                }
+            }, delay);
+        }
     }
 
     /** Only phones; headphones and speakers bonded to this tablet are left alone. */

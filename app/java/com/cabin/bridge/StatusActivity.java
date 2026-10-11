@@ -197,8 +197,16 @@ public class StatusActivity extends Activity implements SharedPreferences.OnShar
 
             TextView pending = findViewById(R.id.status_pending);
             String p = prefs.getString("pending", null);
-            pending.setVisibility(p == null ? View.GONE : View.VISIBLE);
-            pending.setText("Applying " + p + " - Bluetooth restarts for a few seconds…");
+            // A change normally lands in ~5 s; don't lock the screen forever if it never does.
+            if (p != null && System.currentTimeMillis() - prefs.getLong("pending_at", 0) > 30000) {
+                prefs.edit().remove("pending").apply();
+                p = null;
+            }
+            boolean busy = p != null;
+            pending.setVisibility(busy ? View.VISIBLE : View.GONE);
+            pending.setText(pendingText(p));
+            swOn.setEnabled(!busy);
+            for (int i = 0; i < rgMode.getChildCount(); i++) rgMode.getChildAt(i).setEnabled(!busy);
 
             TextView link = findViewById(R.id.status_link);
             TextView calls = findViewById(R.id.status_calls);
@@ -226,6 +234,14 @@ public class StatusActivity extends Activity implements SharedPreferences.OnShar
         } finally {
             rendering = false;
         }
+    }
+
+    private static String pendingText(String p) {
+        if (p == null) return "";
+        if (p.equals("MODE=off")) return "Turning Cabin off… Bluetooth restarts (about 5 seconds).";
+        if (p.startsWith("MODE=")) return "Turning Cabin on… Bluetooth restarts (about 5 seconds), then your phone reconnects.";
+        if (p.startsWith("CALL_AUDIO=")) return "Saving call audio setting…";
+        return "Applying " + p + "… Bluetooth restarts (about 5 seconds).";
     }
 
     private static String prettyInbox(String raw) {
