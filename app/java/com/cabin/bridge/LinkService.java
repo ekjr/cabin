@@ -4,6 +4,7 @@ import android.app.Notification;
 import android.app.PendingIntent;
 import android.app.Service;
 import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothClass;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothProfile;
 import android.content.BroadcastReceiver;
@@ -101,7 +102,7 @@ public class LinkService extends Service {
         LinkService s = self;
         if (s == null || s.hfp == null || s.phone == null) return;
         BtReflect.acceptCall(s.hfp, s.phone);
-        BtReflect.connectAudio(s.hfp, s.phone);
+        ensureAudio();
     }
 
     static void reject() {
@@ -135,7 +136,8 @@ public class LinkService extends Service {
     static void ensureAudio() {
         LinkService s = self;
         if (s == null || s.hfp == null || s.phone == null) return;
-        BtReflect.connectAudio(s.hfp, s.phone);
+        if (Prefs.audioOnTablet(s)) BtReflect.connectAudio(s.hfp, s.phone);
+        else BtReflect.disconnectAudio(s.hfp, s.phone);
     }
 
     static Object callObject(int id) {
@@ -152,34 +154,37 @@ public class LinkService extends Service {
         if (s != null) s.detail(text);
     }
 
-    static void pullUnread() {
-        LinkService s = self;
-        if (s != null && s.active()) s.requestUnread();
-    }
-
+    /** Sends a reply typed in Cabin's own inbox (for tablets without a usable SMS app). */
     static void reply(String address, String body) {
         LinkService s = self;
-        if (s == null || !s.active() || body == null || body.trim().length() == 0) return;
-        String to = address == null || address.length() == 0 ? s.phoneLabel() : address;
-        boolean sent = s.map != null && s.phone != null && BtReflect.sendMessage(s.map, s.phone, to, body.trim());
-        if (sent) SmsBridge.insertSent(s, to, body.trim(), System.currentTimeMillis());
-        s.rememberText(to, body.trim(), true);
-        s.detail(sent ? "Reply sent through your phone." : "Reply saved. The phone has not accepted it yet.");
+        if (s == null || body == null || body.trim().length() == 0) return;
+        String text = body.trim();
+        String to = address == null || address.length() == 0 ? "Unknown" : address;
+        boolean sent = s.map != null && s.phone != null && BtReflect.sendMessage(s.map, s.phone, to, text);
+        if (sent) SmsBridge.insertSent(s, to, text, System.currentTimeMillis());
+        s.rememberText(to, text, true);
+        s.detail(sent ? "Reply sent through your phone." : "The phone did not take the reply. Is it connected?");
         s.publish();
+    }
+
+    static void pullUnread() {
+        LinkService s = self;
+        if (s != null) s.requestUnread();
     }
 
     @Override
     public void onCreate() {
         super.onCreate();
         self = this;
+        if (!Prefs.MODE_HFP.equals(Prefs.mode(this))) {
+            // Started by the system or a stale intent while Cabin is off or in SAP mode.
+            startInForeground("Off");
+            stopSelf();
+            return;
+        }
         adapter = BluetoothAdapter.getDefaultAdapter();
         loadSeen();
         systemOwnsCalls = systemHandsFreeService();
-        if (!active()) {
-            startInForeground("Cabin is off");
-            publish();
-            return;
-        }
         if (!systemOwnsCalls) registerOurAccount();
         else forgetOurAccount();
         startInForeground("Waiting for your phone");
@@ -196,31 +201,24 @@ public class LinkService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        String action = intent == null ? null : intent.getAction();
-        if ("off".equals(action) || !active()) {
-            pauseLink();
-            startInForeground("Cabin is off");
-            return START_STICKY;
-        }
-        if (!receiversRegistered) {
-            if (!systemOwnsCalls) registerOurAccount();
-            registerBtReceivers();
-            bindProfiles();
-            watchOutbox();
+        if (!Prefs.MODE_HFP.equals(Prefs.mode(this))) {
+            startInForeground("Off");
+            stopSelf();
+            return START_NOT_STICKY;
         }
         startInForeground(phone == null ? "Waiting for your phone" : "Phone linked");
-        if ("pull".equals(action) || "on".equals(action)) {
-            attachBonded();
-            if ("pull".equals(action)) requestUnread();
-        }
-        publish();
+        if ("pull".equals(intent == null ? null : intent.getAction())) requestUnread();
         return START_STICKY;
     }
 
     @Override
     public void onDestroy() {
+        handler.removeCallbacksAndMessages(null);
         if (smsObserver != null) getContentResolver().unregisterContentObserver(smsObserver);
         if (receiversRegistered) unregisterReceiver(bluetoothEvents);
+        if (adapter != null && hfp != null && phone != null) {
+            BtReflect.setAudioRouteAllowed(hfp, phone, true);
+        }
         if (adapter != null) {
             closeProfile(BtReflect.HEADSET_CLIENT);
             closeProfile(BtReflect.MAP_CLIENT);
@@ -264,13 +262,31 @@ public class LinkService extends Service {
         }
         if (bonded == null) return;
         for (BluetoothDevice device : bonded) {
+            if (!isPhone(device)) continue;
             if (hfp != null) BtReflect.connect(hfp, device);
             if (map != null) BtReflect.connect(map, device);
             if (pbap != null) BtReflect.connect(pbap, device);
         }
         phone = firstConnected(hfp);
         if (phone == null) phone = firstConnected(map);
+        applyAudioPreference();
         if (systemOwnsCalls) enableSystemAccounts();
+    }
+
+    /** Only phones; headphones and speakers bonded to this tablet are left alone. */
+    private static boolean isPhone(BluetoothDevice device) {
+        try {
+            BluetoothClass cls = device.getBluetoothClass();
+            return cls == null || cls.getMajorDeviceClass() == BluetoothClass.Device.Major.PHONE;
+        } catch (Throwable t) {
+            return true;
+        }
+    }
+
+    /** Call audio: on this tablet, or left on the phone (and any car it is connected to). */
+    private void applyAudioPreference() {
+        if (hfp == null || phone == null) return;
+        BtReflect.setAudioRouteAllowed(hfp, phone, Prefs.audioOnTablet(this));
     }
 
     private BluetoothDevice firstConnected(Object profile) {
@@ -279,7 +295,6 @@ public class LinkService extends Service {
     }
 
     private void onCall(Object call) {
-        if (!active()) return;
         int id = BtReflect.callId(call);
         int state = BtReflect.callState(call);
         String number = BtReflect.callNumber(call);
@@ -298,6 +313,9 @@ public class LinkService extends Service {
             CabinConnectionService.onRemote(id, number, state, call);
             if (state == BtReflect.CALL_ACTIVE) ensureAudio();
             if (state == BtReflect.CALL_TERMINATED) stopCallAlert();
+        } else if (state == BtReflect.CALL_ACTIVE && !Prefs.audioOnTablet(this)
+                && hfp != null && phone != null) {
+            BtReflect.disconnectAudio(hfp, phone);
         }
         publish();
     }
@@ -320,7 +338,6 @@ public class LinkService extends Service {
     }
 
     private void onMapMessage(Intent intent) {
-        if (!active()) return;
         String handle = intent.getStringExtra(BtReflect.EXTRA_MESSAGE_HANDLE);
         String body = intent.getStringExtra(Intent.EXTRA_TEXT);
         String sender = senderAddress(intent);
@@ -331,7 +348,7 @@ public class LinkService extends Service {
         boolean ok = SmsBridge.insertInbox(this, sender, body == null ? "" : body, when);
         rememberText(sender, body == null ? "" : body, false);
         detail(ok
-                ? "Text from " + sender + " is in Messages."
+                ? "Text from " + sender + " sent to Messages."
                 : "Text from " + sender + " is in Cabin. Messages did not take the copy.");
         saveSeen();
         publish();
@@ -357,7 +374,6 @@ public class LinkService extends Service {
     }
 
     private void watchOutbox() {
-        if (smsObserver != null) return;
         smsObserver = new ContentObserver(handler) {
             @Override
             public void onChange(boolean selfChange) {
@@ -373,7 +389,7 @@ public class LinkService extends Service {
     }
 
     private void forwardOutbox() {
-        if (!active() || hasReadySim()) return;
+        if (hasReadySim()) return;
         if (map == null || phone == null) return;
         Cursor cursor = null;
         try {
@@ -415,16 +431,21 @@ public class LinkService extends Service {
     }
 
     private boolean systemHandsFreeService() {
-        try {
-            ServiceInfo info = getPackageManager().getServiceInfo(
-                    new ComponentName(
-                            "com.android.bluetooth",
-                            "com.android.bluetooth.hfpclient.connserv.HfpClientConnectionService"),
-                    PackageManager.MATCH_DISABLED_COMPONENTS);
-            return info.enabled;
-        } catch (Throwable t) {
-            return false;
+        PackageManager pm = getPackageManager();
+        for (String pkg : BtReflect.BT_PACKAGES) {
+            for (String cls : BtReflect.HFP_CONNSERV) {
+                ComponentName cn = new ComponentName(pkg, cls);
+                try {
+                    ServiceInfo info = pm.getServiceInfo(cn, PackageManager.MATCH_DISABLED_COMPONENTS);
+                    int state = pm.getComponentEnabledSetting(cn);
+                    if (state == PackageManager.COMPONENT_ENABLED_STATE_ENABLED) return true;
+                    if (state == PackageManager.COMPONENT_ENABLED_STATE_DEFAULT && info.enabled) return true;
+                } catch (Throwable ignored) {
+                    // Not in this build of the Bluetooth app.
+                }
+            }
         }
+        return false;
     }
 
     private void registerOurAccount() {
@@ -446,9 +467,14 @@ public class LinkService extends Service {
     }
 
     private void forgetOurAccount() {
+        forgetAccount(this);
+    }
+
+    /** Removes Cabin's fallback calling account from Telecom (when off or in SAP mode). */
+    static void forgetAccount(Context context) {
         try {
-            TelecomManager telecom = getSystemService(TelecomManager.class);
-            if (telecom != null) telecom.unregisterPhoneAccount(ourHandle());
+            TelecomManager telecom = context.getSystemService(TelecomManager.class);
+            if (telecom != null) telecom.unregisterPhoneAccount(handle(context));
         } catch (Throwable ignored) {
         }
     }
@@ -468,7 +494,7 @@ public class LinkService extends Service {
         List<PhoneAccountHandle> handles = accountsFor(telecom, scheme);
         for (PhoneAccountHandle handle : handles) {
             ComponentName cn = handle.getComponentName();
-            if (cn == null || !"com.android.bluetooth".equals(cn.getPackageName())) continue;
+            if (cn == null || !BtReflect.isBluetoothPackage(cn.getPackageName())) continue;
             enableAccount(telecom, handle);
             selectOutgoingIfEmpty(telecom, handle);
         }
@@ -511,7 +537,11 @@ public class LinkService extends Service {
     }
 
     private PhoneAccountHandle ourHandle() {
-        return new PhoneAccountHandle(new ComponentName(this, CabinConnectionService.class), ACCOUNT_ID);
+        return handle(this);
+    }
+
+    private static PhoneAccountHandle handle(Context context) {
+        return new PhoneAccountHandle(new ComponentName(context, CabinConnectionService.class), ACCOUNT_ID);
     }
 
     private void registerBtReceivers() {
@@ -605,66 +635,41 @@ public class LinkService extends Service {
     private void publish() {
         SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         String link;
+        if (adapter == null || !adapter.isEnabled()) link = "Bluetooth is off";
+        else if (phone != null) link = "Phone connected";
+        else if (hfp == null && map == null) link = "Car Bluetooth profiles are not on this tablet";
+        else link = "Pair your phone, and allow calls, contacts, and messages";
+
         String calls;
+        if (systemOwnsCalls) calls = "Calls open in the Phone app";
+        else if (hfp != null) calls = "Calls open in the Phone app, through Cabin";
+        else calls = "Hands-free calling is missing from this tablet's Bluetooth";
+
         String texts;
-        if (!active()) {
-            link = "Cabin is off";
-            calls = "Calls stay on your phone";
-            texts = "Texts stay on your phone";
-        } else if (adapter == null || !adapter.isEnabled()) {
-            link = "Bluetooth is off";
-            calls = "Turn Bluetooth on";
-            texts = "Turn Bluetooth on";
-        } else {
-            if (phone != null) link = "Phone connected";
-            else if (hfp == null && map == null) link = "Car Bluetooth profiles are not on this tablet";
-            else link = "Pair your phone, and allow calls, contacts, and messages";
-            if (systemOwnsCalls) calls = "Calls open in the Phone app";
-            else if (hfp != null) calls = "Calls open in the Phone app, through Cabin";
-            else calls = "Hands-free calling is missing from this tablet's Bluetooth";
-            if (map != null && phone != null) texts = "Texts open in Messages, and in Cabin";
-            else if (map != null) texts = "Message access is on. Waiting for the phone.";
-            else texts = "Message access is missing from this tablet's Bluetooth";
-        }
+        if (map != null && phone != null) texts = "Texts open in the Messages app";
+        else if (map != null) texts = "Message access is on. Waiting for the phone.";
+        else texts = "Message access is missing from this tablet's Bluetooth";
 
         prefs.edit()
                 .putString("link", link)
                 .putString("calls", calls)
                 .putString("texts", texts)
                 .apply();
-        startInForeground(!active() ? "Cabin is off" : phone != null ? "Phone linked" : "Waiting for your phone");
+        startInForeground(phone != null ? "Phone linked" : "Waiting for your phone");
     }
 
-    private boolean active() {
-        return getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean("enabled", true);
-    }
-
-    private void pauseLink() {
-        if (receiversRegistered) {
-            try {
-                unregisterReceiver(bluetoothEvents);
-            } catch (Throwable ignored) {
-            }
-            receiversRegistered = false;
-        }
-        stopCallAlert();
-        publish();
-    }
-
-    private String phoneLabel() {
-        String to = getSharedPreferences(PREFS, MODE_PRIVATE).getString("reply_to", "");
-        return to == null || to.length() == 0 ? "Unknown" : to;
-    }
-
+    /** Last few texts, newest last, for Cabin's own inbox. Rows: who-flag TAB address TAB body. */
     private void rememberText(String who, String body, boolean mine) {
         SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         String prev = prefs.getString("inbox", "");
         String safeWho = who == null ? "" : who.replace('\t', ' ').replace('\n', ' ');
         String safeBody = body == null ? "" : body.replace('\t', ' ').replace('\n', ' ');
         String row = (mine ? "me" : "them") + "\t" + safeWho + "\t" + safeBody;
-        String next = prev == null || prev.length() == 0 ? row : prev + "\n" + row;
-        if (next.length() > 4000) next = next.substring(next.length() - 4000);
-        prefs.edit().putString("inbox", next).putString("reply_to", safeWho).apply();
+        String next = prev.length() == 0 ? row : prev + "\n" + row;
+        if (next.length() > 4000) next = next.substring(next.indexOf('\n', next.length() - 4000) + 1);
+        SharedPreferences.Editor e = prefs.edit().putString("inbox", next);
+        if (!mine) e.putString("reply_to", safeWho);
+        e.apply();
     }
 
     private void detail(String text) {

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12 and older: turn on the car-kit profiles in the Bluetooth app's config. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.cabin.btoverlay">
+    <overlay android:targetPackage="com.android.bluetooth" android:isStatic="false" />
+    <application android:hasCode="false" />
+</manifest>

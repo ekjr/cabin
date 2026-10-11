@@ -35,6 +35,19 @@ final class BtReflect {
     static final String EXTRA_SENDER_URI =
             "android.bluetooth.mapmce.profile.extra.SENDER_CONTACT_URI";
 
+    /** AOSP and the Google (APEX) build of the Bluetooth app. */
+    static final String[] BT_PACKAGES = {"com.android.bluetooth", "com.google.android.bluetooth"};
+    /** Android 13+ and Android 12-and-older class names of the system hands-free ConnectionService. */
+    static final String[] HFP_CONNSERV = {
+            "com.android.bluetooth.hfpclient.HfpClientConnectionService",
+            "com.android.bluetooth.hfpclient.connserv.HfpClientConnectionService",
+    };
+
+    static boolean isBluetoothPackage(String pkg) {
+        for (String p : BT_PACKAGES) if (p.equals(pkg)) return true;
+        return false;
+    }
+
     static final int CALL_ACTIVE = 0;
     static final int CALL_HELD = 1;
     static final int CALL_DIALING = 2;
@@ -78,6 +91,17 @@ final class BtReflect {
     static boolean connectAudio(Object profile, BluetoothDevice device) {
         return invokeBool(profile, "connectAudio",
                 new Class[]{BluetoothDevice.class}, new Object[]{device});
+    }
+
+    static boolean disconnectAudio(Object profile, BluetoothDevice device) {
+        return invokeBool(profile, "disconnectAudio",
+                new Class[]{BluetoothDevice.class}, new Object[]{device});
+    }
+
+    /** false keeps call audio on the phone (or the car it is also connected to). */
+    static boolean setAudioRouteAllowed(Object profile, BluetoothDevice device, boolean allowed) {
+        return invokeBool(profile, "setAudioRouteAllowed",
+                new Class[]{BluetoothDevice.class, boolean.class}, new Object[]{device, allowed});
     }
 
     static boolean dial(Object profile, BluetoothDevice device, String number) {
