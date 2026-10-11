@@ -220,6 +220,10 @@ has_ctl() {
 #     beamforming; without the DSP the far mic just adds room noise. With HFP_MIC=single,
 #     "hfp-sco handset" turns the second decimator off and capture back to mono, leaving
 #     the main (bottom) mic. Speakerphone keeps its own mic.
+#  7. "hfp-sco-wb" (HD voice / mSBC) sets "Internal BTSCO SampleRate" to "16000", but the
+#     control is an enum (BTSCO_RATE_8KHZ / BTSCO_RATE_16KHZ), so it's rejected and a
+#     wideband call would run at 8 kHz (garbled or silent). Use the enum name, when the
+#     file's other paths show that's what this control takes.
 #  5. Car-kit calls skip the voice DSP, which normally adds mic gain, so the other side hears
 #     you quietly. Raise the codec's mic gain (DECn Volume) by MIC_BOOST dB, in "hfp-sco"
 #     only, so it applies during car-kit calls and resets after.
@@ -267,6 +271,13 @@ patch_mixer_paths() {
         sed -i "s|</mixer>|    <path name=\"voice-speaker-hfp\">\n        <path name=\"$spk\" />\n    </path>\n    <path name=\"voice-speaker-mic-hfp\">\n        <path name=\"$mic\" />\n    </path>\n</mixer>|" "$tmp"
         changed="aliases $spk/$mic"
       fi
+    fi
+
+    if grep -q '<ctl name="Internal BTSCO SampleRate" value="BTSCO_RATE_16KHZ"' "$tmp" \
+      && sed -n '/<path name="hfp-sco-wb">/,/<\/path>/p' "$tmp" | grep -q 'SampleRate" value="16000"'; then
+      # Only inside the car-kit path; the same typo in the phone's own headset paths is left alone.
+      sed -i '/<path name="hfp-sco-wb">/,/<\/path>/s|<ctl name="Internal BTSCO SampleRate" value="16000"|<ctl name="Internal BTSCO SampleRate" value="BTSCO_RATE_16KHZ"|' "$tmp"
+      changed="$changed, wideband rate 16000->BTSCO_RATE_16KHZ"
     fi
 
     single=
