@@ -124,12 +124,19 @@ public class CabinConnectionService extends ConnectionService {
             }
         }
 
+        // Telecom answers through onAnswer(int videoState) (the Phone app passes a video
+        // state even for voice calls), and Connection's default for that does nothing.
+        // Handle both entry points.
         @Override
-        public void onAnswer() {
+        public void onAnswer(int videoState) {
             android.util.Log.i(BtReflect.TAG, "Phone app pressed Answer");
             LinkService.answer();
             setActive();
-            LinkService.ensureAudio();
+        }
+
+        @Override
+        public void onAnswer() {
+            onAnswer(android.telecom.VideoProfile.STATE_AUDIO_ONLY);
         }
 
         @Override
@@ -137,6 +144,16 @@ public class CabinConnectionService extends ConnectionService {
             android.util.Log.i(BtReflect.TAG, "Phone app pressed Decline");
             LinkService.reject();
             close(new DisconnectCause(DisconnectCause.REJECTED));
+        }
+
+        @Override
+        public void onReject(int rejectReason) {
+            onReject();
+        }
+
+        @Override
+        public void onReject(String replyMessage) {
+            onReject();
         }
 
         @Override
