@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Cabin</string>
+    <string name="tagline">This tablet is the handset. Your phone keeps the SIM.</string>
+    <string name="channel_name">Cabin link</string>
+    <string name="channel_calls">Cabin calls</string>
+</resources>
