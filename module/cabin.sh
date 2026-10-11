@@ -295,10 +295,11 @@ uses_disabled_profiles() {
   [ "$API" -le 32 ] 2>/dev/null
 }
 
-# AG (this device acting as a phone for headsets) off? "auto" = off where the stack
-# can't run AG and hands-free together (Android 12 and older).
+# AG (this device acting as a phone toward headsets and car head units, which Android Auto
+# needs) off? Only when asked: an Android 11 Qualcomm stack ran AG and hands-free together
+# fine. "auto" keeps it on; "off" is the escape hatch for stacks that can't.
 ag_off() {
-  [ "$HFP_AG" = off ] || { [ "$HFP_AG" = auto ] && uses_disabled_profiles; }
+  [ "$HFP_AG" = off ]
 }
 
 # Returns 0 when the setting changed (Bluetooth needs a restart).

@@ -34,7 +34,7 @@ Other settings (`su -c cabin set KEY VALUE`):
 | `CALL_AUDIO` | `tablet` (default) / `phone` | Where you hear the call. Use `phone` when the phone is also on a car's Android Auto, so call audio stays in the car. |
 | `MEDIA_SINK` | `0` (default) / `1` | Also play the phone's music on the tablet (A2DP sink). Keep `0` with Android Auto. While on, Bluetooth headphones on the tablet won't work. Android 13+ only. |
 | `CALL_HANDLER` | `auto` (default) / `system` / `cabin` | Which service puts calls into the Phone app. `auto` uses Cabin's on Android 12 and older. |
-| `HFP_AG` | `auto` (default) / `keep` / `off` | The device's own headset-side role (its Bluetooth headsets, car). `auto` turns it off while Cabin is on for Android 12 and older, because those stacks can't run both roles, and keeps it on Android 13+. `off` forces it off; try that if the phone won't connect "for calls". |
+| `HFP_AG` | `auto` (default) / `keep` / `off` | The device's own role as a phone toward Bluetooth headsets and car head units (Android Auto needs it). `auto` and `keep` leave it on alongside Cabin; `off` turns it off while Cabin is on. Try `off` if your phone won't connect "for calls" or Bluetooth is unstable. |
 
 ## Install
 
