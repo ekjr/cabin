@@ -59,16 +59,14 @@ final class BtReflect {
     private BtReflect() {}
 
     static boolean connect(Object profile, BluetoothDevice device) {
-        if (!invokeBool(profile, "connect", new Class[]{BluetoothDevice.class}, new Object[]{device})) {
-            return false;
-        }
+        // Allow the profile first: the stack refuses connect() while the policy is "forbidden".
         // 100 = CONNECTION_POLICY_ALLOWED / PRIORITY_ON
         if (!invokeBool(profile, "setConnectionPolicy",
                 new Class[]{BluetoothDevice.class, int.class}, new Object[]{device, 100})) {
             invokeBool(profile, "setPriority",
                     new Class[]{BluetoothDevice.class, int.class}, new Object[]{device, 100});
         }
-        return true;
+        return invokeBool(profile, "connect", new Class[]{BluetoothDevice.class}, new Object[]{device});
     }
 
     static boolean acceptCall(Object profile, BluetoothDevice device) {

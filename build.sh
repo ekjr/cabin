@@ -42,6 +42,9 @@ fi
 sign() {
   "$ZIPALIGN" -f -p 4 "$1" "$1.aligned"
   "$APKSIGNER" sign --ks "$KEYSTORE" --ks-pass "pass:$KS_PASS" --out "$2" "$1.aligned"
+  # Android 11+ refuses APKs whose resources.arsc is compressed (install error -124).
+  unzip -v "$2" resources.arsc | grep -q ' Stored ' || { echo "$2: resources.arsc is compressed" >&2; exit 1; }
+  "$ZIPALIGN" -c -p 4 "$2" || { echo "$2: not aligned" >&2; exit 1; }
 }
 
 echo "== app"

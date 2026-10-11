@@ -33,7 +33,7 @@ Other settings (`su -c cabin set KEY VALUE`):
 |---|---|---|
 | `CALL_AUDIO` | `tablet` (default) / `phone` | Where you hear the call. Use `phone` when the phone is also on a car's Android Auto, so call audio stays in the car. |
 | `MEDIA_SINK` | `0` (default) / `1` | Also play the phone's music on the tablet (A2DP sink). Keep `0` with Android Auto. While on, Bluetooth headphones on the tablet won't work. Android 13+ only. |
-| `HFP_AG` | `keep` (default) / `off` | Turns off the tablet's own headset-side profile. Try `off` if the phone won't connect "for calls". |
+| `HFP_AG` | `keep` (default) / `off` | Turns off the tablet's own headset-side profile. Try `off` if the phone won't connect "for calls". On Android 12 and older it is always off while Cabin is on, because those Bluetooth stacks can't run both roles. |
 
 ## Install
 
@@ -93,7 +93,7 @@ app/               CabinBridge priv-app: link service, SMS bridge, fallback Conn
 overlay/           Bluetooth config overlay for Android <= 12
 ```
 
-Logs: `/data/adb/cabin/*.log`, and `logcat -s Cabin`.
+Something not working? Run `su -c cabin report` and send `/sdcard/Download/cabin-report.txt`. It holds the device info, overlay and profile state, Bluetooth crashes and Cabin's logs.
 
 ## Build
 

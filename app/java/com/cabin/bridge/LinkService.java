@@ -313,9 +313,9 @@ public class LinkService extends Service {
             CabinConnectionService.onRemote(id, number, state, call);
             if (state == BtReflect.CALL_ACTIVE) ensureAudio();
             if (state == BtReflect.CALL_TERMINATED) stopCallAlert();
-        } else if (state == BtReflect.CALL_ACTIVE && !Prefs.audioOnTablet(this)
-                && hfp != null && phone != null) {
-            BtReflect.disconnectAudio(hfp, phone);
+        } else if (state == BtReflect.CALL_ACTIVE) {
+            // The system call service doesn't always open the SCO audio link itself.
+            ensureAudio();
         }
         publish();
     }

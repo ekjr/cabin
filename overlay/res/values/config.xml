@@ -1,6 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12 and older. Tested pieces from an Android 11 Qualcomm tablet:
+     the client profiles only start through these resources (props are ignored), and the
+     call-integration service has its own switch. Those stacks can't run the headset (AG)
+     and hands-free (HF) roles together, so AG is off while Cabin is on. -->
 <resources>
     <bool name="profile_supported_hfpclient">true</bool>
+    <bool name="hfp_client_connection_service_enabled">true</bool>
     <bool name="profile_supported_pbapclient">true</bool>
     <bool name="profile_supported_mapmce">true</bool>
+    <bool name="profile_supported_hs_hfp">false</bool>
 </resources>

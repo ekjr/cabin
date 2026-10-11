@@ -7,6 +7,7 @@
 #   cabin status                   show mode, settings and Bluetooth profile state
 #   cabin restart-bt               restart Bluetooth so profile changes take effect
 #   cabin sap-report               what this device's modem offers for SAP mode
+#   cabin report                   save a debug report to /sdcard/Download/cabin-report.txt
 #
 # Internal (module scripts): boot-props, boot, from-app KEY VALUE
 
@@ -199,6 +200,51 @@ sap_report() {
   echo "baseband: $(getprop gsm.version.baseband) / $(getprop ro.board.platform)"
 }
 
+# Everything needed to debug a device, in one file.
+report() {
+  out=/sdcard/Download/cabin-report.txt
+  bp=$(bt_pkg)
+  {
+    echo "===== DEVICE"
+    for p in ro.product.manufacturer ro.product.model ro.build.version.release ro.build.version.sdk \
+      ro.board.platform ro.build.fingerprint; do
+      echo "$p=$(getprop "$p")"
+    done
+    echo; echo "===== CABIN"
+    cat "$MODDIR/module.prop" 2>/dev/null
+    status
+    echo; echo "===== OVERLAY"
+    cmd overlay list --user 0 2>/dev/null | grep -i cabin
+    for r in profile_supported_hfpclient hfp_client_connection_service_enabled \
+      profile_supported_pbapclient profile_supported_mapmce profile_supported_hs_hfp; do
+      echo "$r=$(cmd overlay lookup "$bp" "$bp:bool/$r" 2>/dev/null)"
+    done
+    echo; echo "===== BLUETOOTH COMPONENTS"
+    dumpsys package "$bp" 2>/dev/null | grep -i -A2 'enabledComponents\|disabledComponents' | head -40
+    dumpsys package "$bp" 2>/dev/null | grep -i 'client' | sort -u | head -40
+    echo; echo "===== BLUETOOTH STATE"
+    dumpsys bluetooth_manager 2>/dev/null | head -80
+    echo; echo "===== CABIN APP"
+    pm path com.cabin.bridge 2>&1
+    dumpsys package com.cabin.bridge 2>/dev/null | grep -E 'versionName|privateFlags|granted=false' | head -20
+    echo; echo "===== ROLES"
+    cmd role get-role-holders android.app.role.DIALER 2>/dev/null
+    cmd role get-role-holders android.app.role.SMS 2>/dev/null
+    echo; echo "===== TELECOM ACCOUNTS"
+    dumpsys telecom 2>/dev/null | grep -i 'PhoneAccount' | head -30
+    echo; echo "===== CRASHES"
+    logcat -b crash -d -v threadtime 2>/dev/null | tail -150
+    dumpsys dropbox --print system_app_crash 2>/dev/null | grep -i -B4 -A40 'bluetooth\|cabin' | tail -200
+    echo; echo "===== LOGCAT (Bluetooth / Cabin)"
+    logcat -b all -d -v threadtime 2>/dev/null \
+      | grep -i -E 'Cabin|HeadsetClient|HfpClient|MapClient|PbapClient|AndroidRuntime|bt_btif|FATAL|avc: denied.*(bluetooth|cabin)' \
+      | tail -400
+    echo; echo "===== CABIN LOGS"
+    tail -n 60 "$DATA"/*.log 2>/dev/null
+  } > "$out" 2>&1
+  echo "Saved $out. Send that file."
+}
+
 notify_app() {
   if [ "$MEDIA_SINK" = 1 ]; then ms=true; else ms=false; fi
   am broadcast -f 0x20 -n "$PKG/.ConfigReceiver" -a com.cabin.bridge.CONFIG \
@@ -323,11 +369,14 @@ case "$cmd" in
   sap-report)
     sap_report
     ;;
+  report)
+    report
+    ;;
   status|"")
     status
     ;;
   *)
-    sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'
     exit 1
     ;;
 esac
