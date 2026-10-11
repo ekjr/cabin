@@ -263,9 +263,10 @@ public class LinkService extends Service {
         if (bonded == null) return;
         for (BluetoothDevice device : bonded) {
             if (!isPhone(device)) continue;
-            if (hfp != null) BtReflect.connect(hfp, device);
-            if (map != null) BtReflect.connect(map, device);
-            if (pbap != null) BtReflect.connect(pbap, device);
+            // Re-sending connect to a connected device knocks its state machine around.
+            if (hfp != null && !BtReflect.connected(hfp).contains(device)) BtReflect.connect(hfp, device);
+            if (map != null && !BtReflect.connected(map).contains(device)) BtReflect.connect(map, device);
+            if (pbap != null && !BtReflect.connected(pbap).contains(device)) BtReflect.connect(pbap, device);
         }
         phone = firstConnected(hfp);
         if (phone == null) phone = firstConnected(map);
@@ -313,9 +314,12 @@ public class LinkService extends Service {
             CabinConnectionService.onRemote(id, number, state, call);
             if (state == BtReflect.CALL_ACTIVE) ensureAudio();
             if (state == BtReflect.CALL_TERMINATED) stopCallAlert();
-        } else if (state == BtReflect.CALL_ACTIVE) {
-            // The system call service doesn't always open the SCO audio link itself.
-            ensureAudio();
+        } else if (state == BtReflect.CALL_ACTIVE && !Prefs.audioOnTablet(this)
+                && hfp != null && phone != null) {
+            // The phone opens the audio link itself; only push it back when asked to.
+            // Requesting it here too collided with the phone's own setup on a Qualcomm
+            // Android 11 stack ("bta_hf_client_sco_create: Index ... already in use").
+            BtReflect.disconnectAudio(hfp, phone);
         }
         publish();
     }
