@@ -13,26 +13,28 @@ jobs:
       contents: write
 
     steps:
-      - name: Checkout repository
+      - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Package Magisk module
+      - name: Build Magisk module zip
         shell: bash
         run: |
           set -euo pipefail
 
           if [ ! -d module ]; then
-            echo "module directory not found" >&2
+            echo "Error: module/ directory not found in repo root"
             exit 1
           fi
 
           VERSION="${GITHUB_REF_NAME:-manual}"
           ARTIFACT="Cabin-${VERSION}.zip"
+
           rm -f "$ARTIFACT"
-          zip -r "$ARTIFACT" module >/dev/null
+          zip -r "$ARTIFACT" module
+
           echo "artifact=$ARTIFACT" >> "$GITHUB_ENV"
 
-      - name: Upload zip to GitHub release
+      - name: Upload to GitHub release
         uses: softprops/action-gh-release@v2
         with:
           files: ${{ env.artifact }}
