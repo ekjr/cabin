@@ -100,31 +100,61 @@ public class LinkService extends Service {
         }
     };
 
-    static void answer() {
+    /**
+     * The running link, ready to send a call command, or null (logged). Looks the phone up
+     * again if it was never recorded or went stale, so a missed connection broadcast can't
+     * silently swallow an Answer press.
+     */
+    private static LinkService ready(String what) {
         LinkService s = self;
-        if (s == null || s.hfp == null || s.phone == null) return;
-        BtReflect.acceptCall(s.hfp, s.phone);
+        if (s == null) {
+            Log.w(BtReflect.TAG, what + ": Cabin link is not running");
+            return null;
+        }
+        if (s.hfp == null) {
+            Log.w(BtReflect.TAG, what + ": hands-free profile not bound yet");
+            return null;
+        }
+        List<BluetoothDevice> connected = BtReflect.connected(s.hfp);
+        if (s.phone == null || !connected.contains(s.phone)) {
+            s.phone = connected.isEmpty() ? null : connected.get(0);
+        }
+        if (s.phone == null) {
+            Log.w(BtReflect.TAG, what + ": no phone connected for calls");
+            return null;
+        }
+        return s;
+    }
+
+    static void answer() {
+        LinkService s = ready("answer");
+        if (s == null) return;
+        boolean ok = BtReflect.acceptCall(s.hfp, s.phone);
+        Log.i(BtReflect.TAG, "answer: acceptCall=" + ok);
         ensureAudio();
     }
 
     static void reject() {
-        LinkService s = self;
-        if (s == null || s.hfp == null || s.phone == null) return;
-        BtReflect.rejectCall(s.hfp, s.phone);
+        LinkService s = ready("reject");
+        if (s == null) return;
+        Log.i(BtReflect.TAG, "reject: rejectCall=" + BtReflect.rejectCall(s.hfp, s.phone));
         s.clearCallNotification();
     }
 
     static void hangup(Object call) {
-        LinkService s = self;
-        if (s == null || s.hfp == null || s.phone == null) return;
-        if (call != null) BtReflect.terminateCall(s.hfp, s.phone, call);
-        else BtReflect.rejectCall(s.hfp, s.phone);
+        LinkService s = ready("hangup");
+        if (s == null) return;
+        boolean ok = call != null
+                ? BtReflect.terminateCall(s.hfp, s.phone, call)
+                : BtReflect.rejectCall(s.hfp, s.phone);
+        Log.i(BtReflect.TAG, "hangup: " + (call != null ? "terminateCall=" : "rejectCall=") + ok);
     }
 
     static boolean dial(String number) {
-        LinkService s = self;
-        if (s == null || s.hfp == null || s.phone == null || number == null) return false;
+        LinkService s = ready("dial");
+        if (s == null || number == null) return false;
         boolean ok = BtReflect.dial(s.hfp, s.phone, number);
+        Log.i(BtReflect.TAG, "dial: " + ok);
         s.note(ok ? "Dialing " + number + " through your phone." : "The phone did not accept the dial.");
         return ok;
     }

@@ -428,8 +428,15 @@ case "$cmd" in
     patch_mixer_paths
     ;;
   boot)
+    was_on=$(settings get global bluetooth_on 2>/dev/null)
     set_components
     set_disabled_profiles && restart_bt
+    # Switching a Bluetooth component makes Android kill Bluetooth mid-startup, and it
+    # can come back saved as "off". Turn it back on if it was on before.
+    if [ "$was_on" = 1 ]; then
+      sleep 5
+      [ "$(settings get global bluetooth_on 2>/dev/null)" = 1 ] || { log "bluetooth came back off; turning it on"; bt_power enable; }
+    fi
     describe
     notify_app
     ;;

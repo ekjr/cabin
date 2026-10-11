@@ -126,6 +126,7 @@ public class CabinConnectionService extends ConnectionService {
 
         @Override
         public void onAnswer() {
+            android.util.Log.i(BtReflect.TAG, "Phone app pressed Answer");
             LinkService.answer();
             setActive();
             LinkService.ensureAudio();
@@ -133,6 +134,7 @@ public class CabinConnectionService extends ConnectionService {
 
         @Override
         public void onReject() {
+            android.util.Log.i(BtReflect.TAG, "Phone app pressed Decline");
             LinkService.reject();
             close(new DisconnectCause(DisconnectCause.REJECTED));
         }
