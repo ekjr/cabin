@@ -3,7 +3,8 @@
 #
 #   cabin on | off | toggle        turn Cabin on (last mode) / off / flip
 #   cabin hfp | sap                switch mode (and turn on)
-#   cabin set KEY VALUE            CALL_AUDIO tablet|phone, MEDIA_SINK 0|1, HFP_AG auto|keep|off
+#   cabin set KEY VALUE            CALL_AUDIO tablet|phone, MEDIA_SINK 0|1, HFP_AG auto|keep|off,
+#                                  CALL_HANDLER auto|system|cabin
 #   cabin status                   show mode, settings and Bluetooth profile state
 #   cabin restart-bt               restart Bluetooth so profile changes take effect
 #   cabin sap-report               what this device's modem offers for SAP mode
@@ -60,6 +61,7 @@ load_conf() {
   CALL_AUDIO=tablet
   MEDIA_SINK=0
   HFP_AG=auto
+  CALL_HANDLER=auto
   [ -f "$CONF" ] || return 0
   while IFS='=' read -r k v; do
     case "$k" in
@@ -68,6 +70,7 @@ load_conf() {
       CALL_AUDIO) case "$v" in tablet|phone) CALL_AUDIO=$v ;; esac ;;
       MEDIA_SINK) case "$v" in 0|1) MEDIA_SINK=$v ;; esac ;;
       HFP_AG) case "$v" in auto|keep|off) HFP_AG=$v ;; esac ;;
+      CALL_HANDLER) case "$v" in auto|system|cabin) CALL_HANDLER=$v ;; esac ;;
     esac
   done < "$CONF"
 }
@@ -79,6 +82,7 @@ LAST_ON=$LAST_ON
 CALL_AUDIO=$CALL_AUDIO
 MEDIA_SINK=$MEDIA_SINK
 HFP_AG=$HFP_AG
+CALL_HANDLER=$CALL_HANDLER
 EOF
   mv "$CONF.tmp" "$CONF"
 }
@@ -141,6 +145,14 @@ CLIENT_COMPONENTS="com.android.bluetooth.hfpclient.HfpClientConnectionService
 com.android.bluetooth.hfpclient.connserv.HfpClientConnectionService
 com.android.bluetooth.pbapclient.AuthenticationService"
 
+# Who turns phone calls into calls in the Phone app: the Bluetooth app's own service
+# ("system") or Cabin's. On Android 11 the system one ignored the Answer button (no ATA
+# was ever sent), while the same answer request from Cabin worked, so "auto" uses Cabin
+# on Android 12 and older.
+cabin_handles_calls() {
+  [ "$CALL_HANDLER" = cabin ] || { [ "$CALL_HANDLER" = auto ] && [ "$API" -le 32 ] 2>/dev/null; }
+}
+
 # Only ever enable these; never put them back when Cabin turns off. Changing a component
 # makes Android kill the Bluetooth process, and once a "Bluetooth contacts" account exists,
 # Bluetooth needs AuthenticationService to remove it or it crash-loops
@@ -150,7 +162,44 @@ set_components() {
   [ "$MODE" = hfp ] || return 0
   bp=$(bt_pkg)
   for c in $CLIENT_COMPONENTS; do
+    case "$c" in
+      *HfpClientConnectionService)
+        # Cabin's own call service takes over; the system one must step aside.
+        if cabin_handles_calls; then
+          pm disable "$bp/$c" >/dev/null 2>&1 && log "disabled $bp/$c (Cabin handles calls)"
+          continue
+        fi ;;
+    esac
     pm enable "$bp/$c" >/dev/null 2>&1 && log "enabled $bp/$c"
+  done
+}
+
+# Qualcomm audio HALs route car-kit (HFP client) calls to the "voice-speaker-hfp" /
+# "voice-speaker-mic-hfp" devices. Many phone/tablet mixer_paths files never define them,
+# so the call connects with no sound ("audio_route: unable to find path"). Add them as
+# aliases of the device's own speakerphone paths. Runs in post-fs-data, before Magisk
+# mounts the module, so it always starts from the stock files and follows OTA updates.
+patch_mixer_paths() {
+  out=$MODDIR/system/vendor/etc
+  rm -f "$out"/mixer_paths*.xml
+  for f in /vendor/etc/mixer_paths*.xml; do
+    [ -f "$f" ] || continue
+    grep -q '<path name="voice-speaker-hfp"' "$f" && continue
+    spk=; mic=
+    for p in voice-speaker speaker; do
+      grep -q "<path name=\"$p\">" "$f" && { spk=$p; break; }
+    done
+    for p in voice-speaker-mic speaker-mic handset-mic; do
+      grep -q "<path name=\"$p\">" "$f" && { mic=$p; break; }
+    done
+    [ -n "$spk" ] && [ -n "$mic" ] || continue
+    mkdir -p "$out"
+    sed "s|</mixer>|    <path name=\"voice-speaker-hfp\">\n        <path name=\"$spk\" />\n    </path>\n    <path name=\"voice-speaker-mic-hfp\">\n        <path name=\"$mic\" />\n    </path>\n</mixer>|" \
+      "$f" > "$out/${f##*/}"
+    chmod 0644 "$out/${f##*/}"
+    ctx=$(ls -Z "$f" 2>/dev/null | awk '{print $1}')
+    [ -n "$ctx" ] && chcon "$ctx" "$out/${f##*/}" 2>/dev/null
+    log "mixer paths: ${f##*/} + voice-speaker-hfp=$spk, voice-speaker-mic-hfp=$mic"
   done
 }
 
@@ -333,6 +382,7 @@ set_key() {
     CALL_AUDIO=tablet|CALL_AUDIO=phone) CALL_AUDIO=$2 ;;
     MEDIA_SINK=0|MEDIA_SINK=1) MEDIA_SINK=$2 ;;
     HFP_AG=auto|HFP_AG=keep|HFP_AG=off) HFP_AG=$2 ;;
+    CALL_HANDLER=auto|CALL_HANDLER=system|CALL_HANDLER=cabin) CALL_HANDLER=$2 ;;
     *) return 1 ;;
   esac
 }
@@ -340,7 +390,7 @@ set_key() {
 # Keys whose change needs Bluetooth to restart.
 needs_restart() {
   case "$1" in
-    MODE|MEDIA_SINK|HFP_AG) return 0 ;;
+    MODE|MEDIA_SINK|HFP_AG|CALL_HANDLER) return 0 ;;
   esac
   return 1
 }
@@ -350,6 +400,7 @@ status() {
   echo "call audio:  $CALL_AUDIO"
   echo "media sink:  $MEDIA_SINK"
   echo "hfp ag:      $HFP_AG"
+  echo "calls via:   $CALL_HANDLER ($(cabin_handles_calls && echo cabin || echo system))"
   echo "modem:       $(modem_kind)"
   echo "bluetooth:   $(bt_pkg), on=$(settings get global bluetooth_on 2>/dev/null)"
   for p in $PROPS; do
@@ -374,6 +425,7 @@ case "$cmd" in
   boot-props)
     save_orig
     set_props -n
+    patch_mixer_paths
     ;;
   boot)
     set_components
@@ -391,7 +443,7 @@ case "$cmd" in
     key=$1
     val=$2
     case "$key" in
-      MODE|CALL_AUDIO|MEDIA_SINK|HFP_AG) ;;
+      MODE|CALL_AUDIO|MEDIA_SINK|HFP_AG|CALL_HANDLER) ;;
       *) echo "cabin: unknown setting $key" >&2; log "rejected key"; exit 2 ;;
     esac
     old_mode=$MODE
@@ -419,7 +471,7 @@ case "$cmd" in
     status
     ;;
   *)
-    sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'
     exit 1
     ;;
 esac

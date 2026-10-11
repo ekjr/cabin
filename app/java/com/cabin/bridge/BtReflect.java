@@ -20,6 +20,10 @@ final class BtReflect {
             "android.bluetooth.headsetclient.profile.action.AG_CALL_CHANGED";
     static final String ACTION_HFP_CONNECTION =
             "android.bluetooth.headsetclient.profile.action.CONNECTION_STATE_CHANGED";
+    static final String ACTION_HFP_AUDIO =
+            "android.bluetooth.headsetclient.profile.action.AUDIO_STATE_CHANGED";
+    static final String EXTRA_AUDIO_WBS = "android.bluetooth.headsetclient.extra.AUDIO_WBS";
+    static final int AUDIO_CONNECTED = 2;
     static final String ACTION_AG_EVENT =
             "android.bluetooth.headsetclient.profile.action.AG_EVENT";
     static final String EXTRA_CALL = "android.bluetooth.headsetclient.extra.CALL";

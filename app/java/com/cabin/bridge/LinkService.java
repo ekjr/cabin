@@ -88,6 +88,8 @@ public class LinkService extends Service {
             if (BtReflect.ACTION_CALL_CHANGED.equals(action)) {
                 Object call = intent.getParcelableExtra(BtReflect.EXTRA_CALL);
                 if (call != null) onCall(call);
+            } else if (BtReflect.ACTION_HFP_AUDIO.equals(action)) {
+                onHfpAudio(intent);
             } else if (BtReflect.ACTION_MAP_MESSAGE.equals(action)) {
                 onMapMessage(intent);
             } else if (BtReflect.ACTION_HFP_CONNECTION.equals(action)
@@ -324,6 +326,30 @@ public class LinkService extends Service {
         publish();
     }
 
+    /**
+     * The call's audio link to the phone just opened. Make sure the audio HAL plays it:
+     * some Bluetooth builds only do this on certain paths (on an Android 11 Qualcomm phone,
+     * answering routed audio but an outgoing call never did). Same parameters the
+     * Bluetooth app sends; the HAL ignores a repeat while the car-kit call is running.
+     */
+    private void onHfpAudio(Intent intent) {
+        int state = intent.getIntExtra(BluetoothProfile.EXTRA_STATE, -1);
+        if (state != BtReflect.AUDIO_CONNECTED || !Prefs.audioOnTablet(this)) return;
+        android.media.AudioManager am = getSystemService(android.media.AudioManager.class);
+        if (am == null) return;
+        boolean wbs = intent.getBooleanExtra(BtReflect.EXTRA_AUDIO_WBS, false);
+        try {
+            am.setParameters("hfp_set_sampling_rate=" + (wbs ? 16000 : 8000));
+            am.setParameters("hfp_enable=true");
+            int max = am.getStreamMaxVolume(android.media.AudioManager.STREAM_VOICE_CALL);
+            int vol = am.getStreamVolume(android.media.AudioManager.STREAM_VOICE_CALL);
+            am.setParameters("hfp_volume=" + (max > 0 ? Math.round(15f * vol / max) : 15));
+            detail("Call audio is on this device.");
+        } catch (Throwable t) {
+            Log.w(BtReflect.TAG, "hfp audio routing failed", t);
+        }
+    }
+
     private void placeIncoming(int id, String number) {
         if (number == null) number = "";
         TelecomManager telecom = getSystemService(TelecomManager.class);
@@ -553,6 +579,7 @@ public class LinkService extends Service {
         filter.addAction(BtReflect.ACTION_CALL_CHANGED);
         filter.addAction(BtReflect.ACTION_HFP_CONNECTION);
         filter.addAction(BtReflect.ACTION_AG_EVENT);
+        filter.addAction(BtReflect.ACTION_HFP_AUDIO);
         filter.addAction(BtReflect.ACTION_MAP_MESSAGE);
         filter.addAction(BtReflect.ACTION_MAP_CONNECTION);
         filter.addAction(BluetoothAdapter.ACTION_STATE_CHANGED);

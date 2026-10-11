@@ -42,7 +42,7 @@ else
   choose
   [ $? -eq 1 ] && mode=sap
   ui_print "  -> $mode"
-  printf 'MODE=%s\nLAST_ON=%s\nCALL_AUDIO=tablet\nMEDIA_SINK=0\nHFP_AG=auto\n' "$mode" "$mode" > "$DATA/config"
+  printf 'MODE=%s\nLAST_ON=%s\nCALL_AUDIO=tablet\nMEDIA_SINK=0\nHFP_AG=auto\nCALL_HANDLER=auto\n' "$mode" "$mode" > "$DATA/config"
 fi
 
 set_perm_recursive "$MODPATH" 0 0 0755 0644
