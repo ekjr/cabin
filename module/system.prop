@@ -1,0 +1,7 @@
+bluetooth.profile.hfp.hf.enabled=true
+bluetooth.profile.map.client.enabled=true
+bluetooth.profile.pbap.client.enabled=true
+bluetooth.profile.a2dp.sink.enabled=true
+bluetooth.profile.avrcp.controller.enabled=true
+bluetooth.profile.gatt.enabled=true
+bluetooth.device.class_of_device=38,4,8
