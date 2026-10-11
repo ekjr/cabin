@@ -165,6 +165,45 @@ public class LinkService extends Service {
         BtReflect.sendDtmf(s.hfp, s.phone, tone);
     }
 
+    /**
+     * Makes the audio HAL re-route the car-kit loopback after a speaker/earpiece change.
+     * Qualcomm HALs move it along with any playback stream they re-route, so play half a
+     * second of silence on a sonification stream (which follows the in-call route).
+     */
+    static void nudgeAudioRoute() {
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                android.media.AudioTrack track = null;
+                try {
+                    int rate = 48000;
+                    byte[] silence = new byte[rate];  // 0.5 s, 16-bit mono
+                    track = new android.media.AudioTrack.Builder()
+                            .setAudioAttributes(new android.media.AudioAttributes.Builder()
+                                    .setUsage(android.media.AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
+                                    .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                                    .build())
+                            .setAudioFormat(new android.media.AudioFormat.Builder()
+                                    .setEncoding(android.media.AudioFormat.ENCODING_PCM_16BIT)
+                                    .setSampleRate(rate)
+                                    .setChannelMask(android.media.AudioFormat.CHANNEL_OUT_MONO)
+                                    .build())
+                            .setTransferMode(android.media.AudioTrack.MODE_STATIC)
+                            .setBufferSizeInBytes(silence.length)
+                            .build();
+                    track.write(silence, 0, silence.length);
+                    track.play();
+                    Thread.sleep(700);
+                    Log.i(BtReflect.TAG, "nudged call audio route");
+                } catch (Throwable t) {
+                    Log.w(BtReflect.TAG, "audio route nudge failed", t);
+                } finally {
+                    if (track != null) track.release();
+                }
+            }
+        }, "cabin-route").start();
+    }
+
     static void ensureAudio() {
         LinkService s = self;
         if (s == null || s.hfp == null || s.phone == null) return;

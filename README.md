@@ -71,7 +71,11 @@ access** in the app to check this. Two limits:
 ## Known limits (HFP)
 
 Tested end to end on an Android 11 Qualcomm (msm8937) phone: calls ring in the native dialer;
-answer, decline, hang up, earpiece, speakerphone and mute all work.
+answer, decline, hang up, earpiece and mute work.
+
+- **Speakerphone depends on the kernel.** Cabin re-routes the call when you tap Speaker, but some
+  kernels can only send Bluetooth call audio to the earpiece's port (on the tested phone the
+  loudspeaker's `QUIN_MI2S_RX` port has no Bluetooth input). There the call stays on the earpiece.
 
 - **Texts on Android 11 and older don't work yet.** The Bluetooth app there hands incoming texts
   only to the default SMS app, which ignores them. Android 12+ stores them itself.

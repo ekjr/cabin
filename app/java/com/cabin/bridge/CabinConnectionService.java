@@ -94,6 +94,20 @@ public class CabinConnectionService extends ConnectionService {
         String number;
         Object btCall;
         private boolean closed;
+        private int lastRoute = -1;
+
+        // Speaker/earpiece taps reach Telecom, but the car-kit audio isn't an Android audio
+        // stream, so nothing tells the HAL to move it. Nudge it whenever the route changes.
+        @Override
+        public void onCallAudioStateChanged(android.telecom.CallAudioState state) {
+            if (state == null || closed) return;
+            int route = state.getRoute();
+            if (route != lastRoute) {
+                boolean first = lastRoute == -1;
+                lastRoute = route;
+                if (!first) LinkService.nudgeAudioRoute();
+            }
+        }
 
         CabinConnection(String number, boolean incoming) {
             this.number = number == null ? "" : number;
