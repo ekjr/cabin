@@ -81,3 +81,13 @@ cp "$OUT/CabinBtOverlay.apk" "$STAGE/system/product/overlay/"
 ZIP="$PWD/$OUT/Cabin-v$VERSION.zip"
 (cd "$STAGE" && zip -q -r -X "$ZIP" .)
 echo "built $ZIP"
+
+echo "== extras"
+for d in extras/*/; do
+  [ -f "$d/module.prop" ] || continue
+  id=$(sed -n 's/^id=//p' "$d/module.prop")
+  ver=$(sed -n 's/^version=//p' "$d/module.prop")
+  EZIP="$PWD/$OUT/$id-v$ver.zip"
+  (cd "$d" && zip -q -r -X "$EZIP" . -x README.md)
+  echo "built $EZIP"
+done

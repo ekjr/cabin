@@ -126,6 +126,12 @@ overlay/           Bluetooth config overlay for Android <= 12
 
 Something not working? Run `su -c cabin report` and send `/sdcard/Download/cabin-report.txt`. It holds the device info, overlay and profile state, Bluetooth crashes and Cabin's logs.
 
+## Extras
+
+- **`btsco_wb_fix`** (`extras/btsco-wb-fix`): a separate, standalone module for a Qualcomm vendor
+  typo that can break Bluetooth HD-voice audio in the phone's own headset routes. Not part of
+  Cabin. Released as `btsco_wb_fix-v*.zip`; see its README.
+
 ## Build
 
 Needs JDK 11+, Android build-tools (`aapt2`, `d8`, `zipalign`, `apksigner`) and an API 34 `android.jar`:
