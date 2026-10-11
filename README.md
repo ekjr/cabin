@@ -33,6 +33,7 @@ Other settings (`su -c cabin set KEY VALUE`):
 |---|---|---|
 | `CALL_AUDIO` | `tablet` (default) / `phone` | Where you hear the call. Use `phone` when the phone is also on a car's Android Auto, so call audio stays in the car. |
 | `MEDIA_SINK` | `0` (default) / `1` | Also play the phone's music on the tablet (A2DP sink). Keep `0` with Android Auto. While on, Bluetooth headphones on the tablet won't work. Android 13+ only. |
+| `CALL_HANDLER` | `auto` (default) / `system` / `cabin` | Which service puts calls into the Phone app. `auto` uses Cabin's on Android 12 and older. |
 | `HFP_AG` | `auto` (default) / `keep` / `off` | The device's own headset-side role (its Bluetooth headsets, car). `auto` turns it off while Cabin is on for Android 12 and older, because those stacks can't run both roles, and keeps it on Android 13+. `off` forces it off; try that if the phone won't connect "for calls". |
 
 ## Install
@@ -69,13 +70,19 @@ access** in the app to check this. Two limits:
 
 ## Known limits (HFP)
 
-- **Call audio on the tablet depends on its audio HAL.** Some tablets connect the call but play no
-  sound, because the vendor never wired up hands-free audio. If that happens, use `CALL_AUDIO=phone`
-  and talk on the phone or car while you control the call from the tablet.
-- The tablet needs a **dialer** and an **SMS app**. Wi-Fi tablets often ship without them; the AOSP
-  Dialer and Messaging apps or QKSMS/Fossify work. Some SMS apps refuse to compose without a SIM.
-- On Android 13+ the system's own hands-free calling account usually handles calls, and Cabin keeps
-  it enabled. On older ROMs without it, Cabin registers its own calling account as a fallback.
+Tested end to end on an Android 11 Qualcomm (msm8937) phone: calls ring in the native dialer;
+answer, decline, hang up, earpiece, speakerphone and mute all work.
+
+- **Texts on Android 11 and older don't work yet.** The Bluetooth app there hands incoming texts
+  only to the default SMS app, which ignores them. Android 12+ stores them itself.
+- **Call audio depends on the audio HAL.** On Qualcomm HALs Cabin repairs what it can at boot:
+  it adds the missing `voice-speaker-hfp` / `voice-speaker-mic-hfp` routes, swaps a car-kit route
+  control the kernel doesn't have for one it does, adds the port's hostless switch, and tells the
+  HAL which PCM device to open (`hfp_pcm_dev_id`). Stock files are never touched; Magisk mounts
+  patched copies. If a device still has no sound, use `CALL_AUDIO=phone` and send `cabin report`.
+- **Calls go through Cabin's own call service on Android 12 and older** (`CALL_HANDLER=auto`): the
+  Bluetooth app's built-in one ignored the Answer button there. `CALL_HANDLER=system` switches back.
+- The device needs a **dialer**. Wi-Fi tablets often ship without one; the AOSP Dialer works.
 - Android 12 and older: a static resource overlay (`CabinBtOverlay.apk`) makes the client profiles
   available, because those versions ignore the properties. Cabin turns them on and off by changing
   `bluetooth_disabled_profiles`, which the Bluetooth app reads at start.
