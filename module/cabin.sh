@@ -409,7 +409,12 @@ set_disabled_profiles() {
   have=$(settings get global bluetooth_disabled_profiles 2>/dev/null)
   case "$have" in ''|null|*[!0-9]*) have=0 ;; esac
   [ "$want" = "$have" ] && return 1
-  settings put global bluetooth_disabled_profiles "$want"
+  # Never let a binder "cmd" tool inherit a log file as stdout/stderr: system_server may not
+  # write to it and the whole call fails ("Failed transaction") without changing anything.
+  if ! settings put global bluetooth_disabled_profiles "$want" >/dev/null 2>&1; then
+    log "could not change bluetooth_disabled_profiles"
+    return 1
+  fi
   log "bluetooth_disabled_profiles $have -> $want"
   return 0
 }

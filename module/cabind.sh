@@ -41,6 +41,12 @@ update_sms() {
   log "update id=$1 -> ${out:-ok}"
 }
 
+# Runs the cabin script with its output piped into the log. Handing the log file itself to
+# the script would pass it on to the Android "cmd" tools it calls, which then fail.
+run_cabin() {
+  sh "$MODDIR/cabin.sh" "$@" </dev/null 2>&1 | while IFS= read -r line; do log "$line"; done
+}
+
 handle() {
   op=""; ab=""; bb=""; date=""; type=""; id=""; key=""; value=""
   # Parse key=value lines; never execute the file.
@@ -70,7 +76,7 @@ handle() {
       ;;
     set)
       log "app asks $key=$value"
-      sh "$MODDIR/cabin.sh" from-app "$key" "$value" >> "$LOG" 2>&1
+      run_cabin from-app "$key" "$value"
       ;;
     *)
       log "ignored $1"
@@ -98,7 +104,7 @@ process_queue() {
   printf '%s\n' "$pending" | while IFS='=' read -r k v; do
     [ -n "$k" ] || continue
     log "app asks $k=$v"
-    sh "$MODDIR/cabin.sh" from-app "$k" "$v" >> "$LOG" 2>&1
+    run_cabin from-app "$k" "$v"
   done
 }
 
