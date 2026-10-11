@@ -50,11 +50,15 @@ sign() {
 echo "== app"
 "$AAPT2" compile --dir app/res -o "$OUT/res/app.zip"
 "$AAPT2" link -o "$OUT/app.unsigned.apk" -I "$ANDROID_JAR" \
-  --manifest app/AndroidManifest.xml --java "$OUT/gen" \
+  --manifest app/AndroidManifest.xml --java "$OUT/gen" -A app/assets \
   --min-sdk-version 26 --target-sdk-version 34 \
   --version-code "$VCODE" --version-name "$VERSION" \
   "$OUT/res/app.zip"
-javac --release 11 -Xlint:-options -nowarn -encoding UTF-8 -cp "$ANDROID_JAR" -d "$OUT/classes" \
+# Xposed API stand-ins: compile against them, never ship them (LSPosed provides the real ones).
+mkdir -p "$OUT/stubs"
+javac --release 11 -Xlint:-options -nowarn -encoding UTF-8 -cp "$ANDROID_JAR" -d "$OUT/stubs" \
+  $(find xposed-stubs -name '*.java')
+javac --release 11 -Xlint:-options -nowarn -encoding UTF-8 -cp "$ANDROID_JAR:$OUT/stubs" -d "$OUT/classes" \
   $(find app/java "$OUT/gen" -name '*.java')
 "$D8" --release --min-api 26 --lib "$ANDROID_JAR" --output "$OUT/dex" \
   $(find "$OUT/classes" -name '*.class')

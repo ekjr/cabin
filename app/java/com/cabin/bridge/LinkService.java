@@ -464,11 +464,40 @@ public class LinkService extends Service {
         long when = System.currentTimeMillis();
         boolean ok = SmsBridge.insertInbox(this, sender, body == null ? "" : body, when);
         rememberText(sender, body == null ? "" : body, false);
+        notifyText(sender, intent.getStringExtra(BtReflect.EXTRA_SENDER_NAME), body == null ? "" : body);
         detail(ok
                 ? "Text from " + sender + " sent to Messages."
                 : "Text from " + sender + " is in Cabin. Messages did not take the copy.");
         saveSeen();
         publish();
+    }
+
+    /**
+     * Messages only notifies for texts it receives itself, not ones written into the message
+     * database, so post the notification here. Tapping it opens the conversation in the
+     * default SMS app.
+     */
+    private void notifyText(String address, String name, String body) {
+        String who = name != null && name.trim().length() > 0 ? name.trim() : address;
+        Intent open = new Intent(Intent.ACTION_SENDTO, Uri.fromParts("smsto", address, null));
+        try {
+            String sms = android.provider.Telephony.Sms.getDefaultSmsPackage(this);
+            if (sms != null) open.setPackage(sms);
+        } catch (Throwable ignored) {
+        }
+        open.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        int flags = PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE;
+        int id = 1000 + (address.hashCode() & 0xffff);
+        Notification n = new Notification.Builder(this, CabinApp.CHANNEL_TEXTS)
+                .setSmallIcon(android.R.drawable.sym_action_chat)
+                .setContentTitle(who)
+                .setContentText(body)
+                .setStyle(new Notification.BigTextStyle().bigText(body))
+                .setCategory(Notification.CATEGORY_MESSAGE)
+                .setAutoCancel(true)
+                .setContentIntent(PendingIntent.getActivity(this, id, open, flags))
+                .build();
+        NotificationManager().notify(id, n);
     }
 
     private String senderAddress(Intent intent) {

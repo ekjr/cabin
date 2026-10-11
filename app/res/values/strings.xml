@@ -5,4 +5,5 @@
     <string name="channel_name">Cabin link</string>
     <string name="channel_calls">Cabin calls</string>
     <string name="tile_label">Cabin</string>
+    <string name="channel_texts">Texts from your phone</string>
 </resources>

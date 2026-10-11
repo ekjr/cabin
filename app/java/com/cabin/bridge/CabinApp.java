@@ -8,6 +8,7 @@ import android.os.Build;
 public class CabinApp extends Application {
     public static final String CHANNEL_LINK = "cabin_link";
     public static final String CHANNEL_CALLS = "cabin_calls";
+    public static final String CHANNEL_TEXTS = "cabin_texts";
 
     @Override
     public void onCreate() {
@@ -22,6 +23,8 @@ public class CabinApp extends Application {
                     CHANNEL_CALLS, getString(R.string.channel_calls), NotificationManager.IMPORTANCE_HIGH);
             calls.setShowBadge(false);
             nm.createNotificationChannel(calls);
+            nm.createNotificationChannel(new NotificationChannel(
+                    CHANNEL_TEXTS, getString(R.string.channel_texts), NotificationManager.IMPORTANCE_HIGH));
         }
     }
 }

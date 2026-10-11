@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- LSPosed scope: the Bluetooth app (AOSP and Google builds). -->
+    <string-array name="xposed_scope">
+        <item>com.android.bluetooth</item>
+        <item>com.google.android.bluetooth</item>
+    </string-array>
+</resources>
