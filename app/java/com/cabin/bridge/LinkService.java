@@ -52,6 +52,9 @@ public class LinkService extends Service {
 
     private BluetoothAdapter adapter;
     private Object hfp;
+    /** Tablet's HFP Audio Gateway proxy, used for headset/car connections. */
+    private Object hfpAg;
+    private boolean hfpCvsdRequested;
     private Object map;
     private Object pbap;
     private BluetoothDevice phone;
@@ -63,16 +66,21 @@ public class LinkService extends Service {
         @Override
         public void onServiceConnected(int profile, BluetoothProfile proxy) {
             if (profile == BtReflect.HEADSET_CLIENT) hfp = proxy;
+            else if (profile == BluetoothProfile.HEADSET) hfpAg = proxy;
             else if (profile == BtReflect.MAP_CLIENT) map = proxy;
             else if (profile == BtReflect.PBAP_CLIENT) pbap = proxy;
             attachBonded();
+            if (profile == BluetoothProfile.HEADSET) scheduleHfpCodecRequest();
             publish();
         }
 
         @Override
         public void onServiceDisconnected(int profile) {
             if (profile == BtReflect.HEADSET_CLIENT) hfp = null;
-            else if (profile == BtReflect.MAP_CLIENT) map = null;
+            else if (profile == BluetoothProfile.HEADSET) {
+                hfpAg = null;
+                hfpCvsdRequested = false;
+            } else if (profile == BtReflect.MAP_CLIENT) map = null;
             else if (profile == BtReflect.PBAP_CLIENT) pbap = null;
             publish();
         }
@@ -91,6 +99,13 @@ public class LinkService extends Service {
             } else if (BluetoothAdapter.ACTION_STATE_CHANGED.equals(action)) {
                 if (intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, -1) == BluetoothAdapter.STATE_ON) {
                     reconnectSoon();
+                }
+            } else if (BtReflect.ACTION_HFP_AG_CONNECTION.equals(action)) {
+                int state = intent.getIntExtra(BluetoothProfile.EXTRA_STATE, -1);
+                if (state == BluetoothProfile.STATE_DISCONNECTED) hfpCvsdRequested = false;
+                if (state == BluetoothProfile.STATE_CONNECTED) {
+                    hfpCvsdRequested = false;
+                    scheduleHfpCodecRequest();
                 }
             } else if (BtReflect.ACTION_HFP_AUDIO.equals(action)) {
                 onHfpAudio(intent);
@@ -239,6 +254,53 @@ public class LinkService extends Service {
         return hfpAudio == BtReflect.AUDIO_CONNECTED;
     }
 
+    /** Re-evaluated when the module setting changes; no-op if LinkService is not running. */
+    static void applyHfpCodecPreference(Context context) {
+        LinkService s = self;
+        if (s == null) return;
+        s.hfpCvsdRequested = false;
+        s.scheduleHfpCodecRequest();
+    }
+
+    /** Schedule the codec request after Android reports the headset HFP connection ready. */
+    private void scheduleHfpCodecRequest() {
+        if (!"cvsd".equals(Prefs.hfpCodec(this))) return;
+        handler.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                requestHfpNarrowband();
+            }
+        }, 700);
+    }
+
+    /**
+     * Requests CVSD on the tablet-to-headset HFP AG link. This must happen before that
+     * headset's SCO audio is active. BluetoothHeadset.disableWBS() returns false if the
+     * platform rejects the request (including when SCO is already active).
+     */
+    private void requestHfpNarrowband() {
+        if (!"cvsd".equals(Prefs.hfpCodec(this)) || hfpCvsdRequested) return;
+        Object profile = hfpAg;
+        if (profile == null) {
+            Log.i(BtReflect.TAG, "HFP codec CVSD requested, but the headset profile is not bound yet");
+            return;
+        }
+        List<BluetoothDevice> headsets = BtReflect.connected(profile);
+        if (headsets.isEmpty()) {
+            Log.i(BtReflect.TAG, "HFP codec CVSD requested, but no HFP headset is connected");
+            return;
+        }
+        boolean accepted = BtReflect.disableWbs(profile);
+        Log.i(BtReflect.TAG, "HFP codec CVSD/NBS request: disableWBS=" + accepted
+                + ", connected headsets=" + headsets.size());
+        if (accepted) {
+            hfpCvsdRequested = true;
+            detail("Requested CVSD narrowband (8 kHz) for the headset HFP link. Test a call; codec acceptance does not prove the full relay works.");
+        } else {
+            detail("Could not request CVSD for the headset. It may already have SCO audio active, or this Bluetooth build may not expose disableWBS. Set HFP_CODEC before a call, then reconnect the headset.");
+        }
+    }
+
     /** When the current call went active (0 = no active call), and re-requests since then. */
     private long activeSince;
     private int audioRetries;
@@ -351,6 +413,7 @@ public class LinkService extends Service {
         if (smsObserver != null) getContentResolver().unregisterContentObserver(smsObserver);
         if (receiversRegistered) unregisterReceiver(bluetoothEvents);
         if (adapter != null) {
+            closeProfile(BluetoothProfile.HEADSET);
             closeProfile(BtReflect.HEADSET_CLIENT);
             closeProfile(BtReflect.MAP_CLIENT);
             closeProfile(BtReflect.PBAP_CLIENT);
@@ -369,6 +432,7 @@ public class LinkService extends Service {
             detail("Bluetooth is off.");
             return;
         }
+        adapter.getProfileProxy(this, profiles, BluetoothProfile.HEADSET);
         adapter.getProfileProxy(this, profiles, BtReflect.HEADSET_CLIENT);
         adapter.getProfileProxy(this, profiles, BtReflect.MAP_CLIENT);
         adapter.getProfileProxy(this, profiles, BtReflect.PBAP_CLIENT);
@@ -797,6 +861,7 @@ public class LinkService extends Service {
         IntentFilter filter = new IntentFilter();
         filter.addAction(BtReflect.ACTION_CALL_CHANGED);
         filter.addAction(BtReflect.ACTION_HFP_CONNECTION);
+        filter.addAction(BtReflect.ACTION_HFP_AG_CONNECTION);
         filter.addAction(BtReflect.ACTION_AG_EVENT);
         filter.addAction(BtReflect.ACTION_HFP_AUDIO);
         filter.addAction(BtReflect.ACTION_MAP_MESSAGE);
