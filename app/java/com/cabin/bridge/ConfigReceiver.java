@@ -12,6 +12,7 @@ public class ConfigReceiver extends BroadcastReceiver {
     @Override
     public void onReceive(Context context, Intent intent) {
         if (intent == null) return;
+        String priorHfpCodec = Prefs.hfpCodec(context);
         SharedPreferences.Editor e = Prefs.get(context).edit();
         copy(intent, e, "mode");
         copy(intent, e, "last_on");
@@ -19,10 +20,14 @@ public class ConfigReceiver extends BroadcastReceiver {
         copy(intent, e, "relay");
         copy(intent, e, "modem");
         copy(intent, e, "hfp_pcm_dev_id");
+        copy(intent, e, "hfp_codec");
         if (intent.hasExtra("media_sink")) e.putBoolean("media_sink", intent.getBooleanExtra("media_sink", false));
         e.remove("pending");
         e.commit();
         LinkService.applyHfpPcmDevice(context);
+        if (!priorHfpCodec.equals(Prefs.hfpCodec(context))) {
+            LinkService.applyHfpCodecPreference(context);
+        }
         apply(context);
     }
 
