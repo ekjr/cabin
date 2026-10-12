@@ -3,7 +3,7 @@
 #
 #   cabin on | off | toggle        turn Cabin on (last mode) / off / flip
 #   cabin hfp | sap                switch mode (and turn on)
-#   cabin set KEY VALUE            CALL_AUDIO tablet|phone, MEDIA_SINK 0|1, HFP_AG auto|keep|off,
+#   cabin set KEY VALUE            MEDIA_SINK 0|1, HFP_AG auto|keep|off,
 #                                  CALL_HANDLER auto|system|cabin, MIC_BOOST 0|6|12|18|24,
 #                                  HFP_MIC single|dual
 #   cabin status                   show mode, settings and Bluetooth profile state
@@ -60,7 +60,6 @@ rp() {
 load_conf() {
   MODE=hfp
   LAST_ON=hfp
-  CALL_AUDIO=tablet
   MEDIA_SINK=0
   HFP_AG=auto
   CALL_HANDLER=auto
@@ -71,7 +70,6 @@ load_conf() {
     case "$k" in
       MODE) case "$v" in hfp|sap|off) MODE=$v ;; esac ;;
       LAST_ON) case "$v" in hfp|sap) LAST_ON=$v ;; esac ;;
-      CALL_AUDIO) case "$v" in tablet|phone) CALL_AUDIO=$v ;; esac ;;
       MEDIA_SINK) case "$v" in 0|1) MEDIA_SINK=$v ;; esac ;;
       HFP_AG) case "$v" in auto|keep|off) HFP_AG=$v ;; esac ;;
       CALL_HANDLER) case "$v" in auto|system|cabin) CALL_HANDLER=$v ;; esac ;;
@@ -85,7 +83,6 @@ save_conf() {
   cat > "$CONF.tmp" <<EOF
 MODE=$MODE
 LAST_ON=$LAST_ON
-CALL_AUDIO=$CALL_AUDIO
 MEDIA_SINK=$MEDIA_SINK
 HFP_AG=$HFP_AG
 CALL_HANDLER=$CALL_HANDLER
@@ -544,7 +541,7 @@ report() {
 notify_app() {
   if [ "$MEDIA_SINK" = 1 ]; then ms=true; else ms=false; fi
   am broadcast -f 0x20 -n "$PKG/.ConfigReceiver" -a com.cabin.bridge.CONFIG \
-    --es mode "$MODE" --es last_on "$LAST_ON" --es call_audio "$CALL_AUDIO" \
+    --es mode "$MODE" --es last_on "$LAST_ON" \
     --ez media_sink "$ms" --es hfp_ag "$HFP_AG" --es modem "$(modem_kind)" \
     --es hfp_pcm_dev_id "$(hfp_pcm_dev_id)" >/dev/null 2>&1
 }
@@ -567,7 +564,7 @@ apply() {
   [ "$1" = restart ] && restart_bt
   describe
   notify_app &
-  log "mode=$MODE call_audio=$CALL_AUDIO media_sink=$MEDIA_SINK hfp_ag=$HFP_AG"
+  log "mode=$MODE media_sink=$MEDIA_SINK hfp_ag=$HFP_AG"
 }
 
 set_mode() {
@@ -584,7 +581,6 @@ set_mode() {
 set_key() {
   case "$1=$2" in
     MODE=*) set_mode "$2" ;;
-    CALL_AUDIO=tablet|CALL_AUDIO=phone) CALL_AUDIO=$2 ;;
     MEDIA_SINK=0|MEDIA_SINK=1) MEDIA_SINK=$2 ;;
     HFP_AG=auto|HFP_AG=keep|HFP_AG=off) HFP_AG=$2 ;;
     CALL_HANDLER=auto|CALL_HANDLER=system|CALL_HANDLER=cabin) CALL_HANDLER=$2 ;;
@@ -604,7 +600,6 @@ needs_restart() {
 
 status() {
   echo "mode:        $MODE (last on: $LAST_ON)"
-  echo "call audio:  $CALL_AUDIO"
   echo "media sink:  $MEDIA_SINK"
   echo "hfp ag:      $HFP_AG"
   echo "mic boost:   +${MIC_BOOST} dB (car-kit calls)"
@@ -662,7 +657,7 @@ case "$cmd" in
     key=$1
     val=$2
     case "$key" in
-      MODE|CALL_AUDIO|MEDIA_SINK|HFP_AG|CALL_HANDLER|MIC_BOOST|HFP_MIC) ;;
+      MODE|MEDIA_SINK|HFP_AG|CALL_HANDLER|MIC_BOOST|HFP_MIC) ;;
       *) echo "cabin: unknown setting $key" >&2; log "rejected key"; exit 2 ;;
     esac
     old_mode=$MODE

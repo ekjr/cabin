@@ -106,17 +106,6 @@ final class BtReflect {
                 new Class[]{BluetoothDevice.class}, new Object[]{device});
     }
 
-    static boolean disconnectAudio(Object profile, BluetoothDevice device) {
-        return invokeBool(profile, "disconnectAudio",
-                new Class[]{BluetoothDevice.class}, new Object[]{device});
-    }
-
-    /** false keeps call audio on the phone (or the car it is also connected to). */
-    static boolean setAudioRouteAllowed(Object profile, BluetoothDevice device, boolean allowed) {
-        return invokeBool(profile, "setAudioRouteAllowed",
-                new Class[]{BluetoothDevice.class, boolean.class}, new Object[]{device, allowed});
-    }
-
     static boolean dial(Object profile, BluetoothDevice device, String number) {
         try {
             Object result = profile.getClass()

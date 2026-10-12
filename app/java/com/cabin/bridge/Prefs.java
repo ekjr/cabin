@@ -24,10 +24,6 @@ final class Prefs {
         return get(context).getString("last_on", MODE_HFP);
     }
 
-    static boolean audioOnTablet(Context context) {
-        return !"phone".equals(get(context).getString("call_audio", "tablet"));
-    }
-
     static boolean isOn(Context context) {
         return !MODE_OFF.equals(mode(context));
     }

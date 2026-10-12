@@ -77,34 +77,6 @@
                 android:text="SIM Access (SAP) - this device borrows the phone's SIM. Experimental." />
         </RadioGroup>
 
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:text="Call audio"
-            android:textSize="14sp"
-            android:textStyle="bold" />
-
-        <RadioGroup
-            android:id="@+id/rg_audio"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content">
-
-            <RadioButton
-                android:id="@+id/rb_audio_tablet"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:minHeight="48dp"
-                android:text="On this device" />
-
-            <RadioButton
-                android:id="@+id/rb_audio_phone"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:minHeight="48dp"
-                android:text="On the phone (leave the call audio there)" />
-        </RadioGroup>
-
         <CheckBox
             android:id="@+id/cb_media"
             android:layout_width="match_parent"

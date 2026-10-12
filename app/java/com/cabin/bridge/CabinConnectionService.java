@@ -141,7 +141,7 @@ public class CabinConnectionService extends ConnectionService {
             // A headset or car connected to this device can't carry the call: its audio
             // comes from the phone over a separate Bluetooth link, which this device can't
             // pass through. Keep it on this device's own earpiece instead.
-            if (route == android.telecom.CallAudioState.ROUTE_BLUETOOTH && LinkService.audioOnThisDevice()) {
+            if (route == android.telecom.CallAudioState.ROUTE_BLUETOOTH) {
                 android.util.Log.i(BtReflect.TAG, "call audio can't go to a Bluetooth device here; using the earpiece");
                 setAudioRoute(android.telecom.CallAudioState.ROUTE_EARPIECE);
                 return;

@@ -248,7 +248,7 @@ public class LinkService extends Service {
      * later still works.
      */
     private void onHfpAudioLost() {
-        if (!Prefs.audioOnTablet(this) || activeSince == 0) return;
+        if (activeSince == 0) return;
         if (System.currentTimeMillis() - activeSince > 5000 || audioRetries >= 2) return;
         audioRetries++;
         handler.postDelayed(new Runnable() {
@@ -266,11 +266,7 @@ public class LinkService extends Service {
         if (s == null || s.hfp == null || s.phone == null) return;
         // Asking for audio while the link is already up or opening clashes with the open link
         // on some stacks ("sco_create: Index already in use") and can wedge it.
-        if (Prefs.audioOnTablet(s)) {
-            if (hfpAudio == 0) BtReflect.connectAudio(s.hfp, s.phone);
-        } else if (hfpAudio != 0) {
-            BtReflect.disconnectAudio(s.hfp, s.phone);
-        }
+        if (hfpAudio == 0) BtReflect.connectAudio(s.hfp, s.phone);
     }
 
     static Object callObject(int id) {
@@ -350,9 +346,6 @@ public class LinkService extends Service {
         handler.removeCallbacksAndMessages(null);
         if (smsObserver != null) getContentResolver().unregisterContentObserver(smsObserver);
         if (receiversRegistered) unregisterReceiver(bluetoothEvents);
-        if (adapter != null && hfp != null && phone != null) {
-            BtReflect.setAudioRouteAllowed(hfp, phone, true);
-        }
         if (adapter != null) {
             closeProfile(BtReflect.HEADSET_CLIENT);
             closeProfile(BtReflect.MAP_CLIENT);
@@ -404,7 +397,6 @@ public class LinkService extends Service {
         }
         phone = firstConnected(hfp);
         if (phone == null) phone = firstConnected(map);
-        applyAudioPreference();
         if (systemOwnsCalls) enableSystemAccounts();
     }
 
@@ -435,12 +427,6 @@ public class LinkService extends Service {
         } catch (Throwable t) {
             return true;
         }
-    }
-
-    /** Call audio: on this tablet, or left on the phone (and any car it is connected to). */
-    private void applyAudioPreference() {
-        if (hfp == null || phone == null) return;
-        BtReflect.setAudioRouteAllowed(hfp, phone, Prefs.audioOnTablet(this));
     }
 
     private BluetoothDevice firstConnected(Object profile) {
@@ -480,12 +466,6 @@ public class LinkService extends Service {
                 activeSince = 0;
             }
             if (state == BtReflect.CALL_TERMINATED) stopCallAlert();
-        } else if (state == BtReflect.CALL_ACTIVE && !Prefs.audioOnTablet(this)
-                && hfp != null && phone != null) {
-            // The phone opens the audio link itself; only push it back when asked to.
-            // Requesting it here too collided with the phone's own setup on a Qualcomm
-            // Android 11 stack ("bta_hf_client_sco_create: Index ... already in use").
-            BtReflect.disconnectAudio(hfp, phone);
         }
         publish();
     }
@@ -503,7 +483,7 @@ public class LinkService extends Service {
             onHfpAudioLost();
             return;
         }
-        if (state != BtReflect.AUDIO_CONNECTED || !Prefs.audioOnTablet(this)) return;
+        if (state != BtReflect.AUDIO_CONNECTED) return;
         android.media.AudioManager am = getSystemService(android.media.AudioManager.class);
         if (am == null) return;
         boolean wbs = intent.getBooleanExtra(BtReflect.EXTRA_AUDIO_WBS, false);
@@ -534,11 +514,6 @@ public class LinkService extends Service {
         if (id == null || !id.matches("[0-9]+")) return;
         android.media.AudioManager am = context.getSystemService(android.media.AudioManager.class);
         if (am != null) am.setParameters("hfp_pcm_dev_id=" + id);
-    }
-
-    static boolean audioOnThisDevice() {
-        LinkService s = self;
-        return s == null || Prefs.audioOnTablet(s);
     }
 
     /** Adds a call that was started on the phone (Telecom's "unknown call", a system API). */

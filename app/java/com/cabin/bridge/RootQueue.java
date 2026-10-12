@@ -16,7 +16,7 @@ final class RootQueue {
 
     private RootQueue() {}
 
-    /** Ask the cabin script to change a setting: MODE, CALL_AUDIO, MEDIA_SINK or HFP_AG. */
+    /** Ask the cabin script to change a setting: MODE, MEDIA_SINK, HFP_AG, MIC_BOOST, ... */
     static boolean set(Context context, String key, String value) {
         Prefs.get(context).edit()
                 .putString("pending", key + "=" + value)

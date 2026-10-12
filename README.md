@@ -31,7 +31,6 @@ Other settings (`su -c cabin set KEY VALUE`):
 
 | Key | Values | Meaning |
 |---|---|---|
-| `CALL_AUDIO` | `tablet` (default) / `phone` | Where you hear Cabin calls: on this device, or left on the phone. |
 | `MEDIA_SINK` | `0` (default) / `1` | Also play the phone's music on this device (A2DP sink). While on, Bluetooth headphones on this device stop working. Android 13+ only. |
 | `MIC_BOOST` | `12` (default) / `0` / `6` / `18` / `24` | Extra mic gain in dB during car-kit calls (Qualcomm). They skip the voice processing that normally boosts the mic, so callers can hear you quietly. Applies immediately. |
 | `HFP_MIC` | `single` (default) / `dual` | Earpiece car-kit calls: use only the main (bottom) mic, or the phone's dual-mic pair. Dual-mic needs the voice processor, which car-kit calls skip, so single usually sounds cleaner. Speakerphone keeps its own mic. |
@@ -98,7 +97,7 @@ answer, decline, hang up, earpiece and mute work.
   it adds the missing `voice-speaker-hfp` / `voice-speaker-mic-hfp` routes, swaps a car-kit route
   control the kernel doesn't have for one it does, adds the port's hostless switch, and tells the
   HAL which PCM device to open (`hfp_pcm_dev_id`). Stock files are never touched; Magisk mounts
-  patched copies. If a device still has no sound, use `CALL_AUDIO=phone` and send `cabin report`.
+  patched copies. If a device still has no sound, send `cabin report`.
 - **Calls go through Cabin's own call service on Android 12 and older** (`CALL_HANDLER=auto`): the
   Bluetooth app's built-in one ignored the Answer button there. `CALL_HANDLER=system` switches back.
 - The device needs a **dialer**. Wi-Fi tablets often ship without one; the AOSP Dialer works.

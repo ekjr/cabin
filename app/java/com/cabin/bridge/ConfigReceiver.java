@@ -15,7 +15,6 @@ public class ConfigReceiver extends BroadcastReceiver {
         SharedPreferences.Editor e = Prefs.get(context).edit();
         copy(intent, e, "mode");
         copy(intent, e, "last_on");
-        copy(intent, e, "call_audio");
         copy(intent, e, "hfp_ag");
         copy(intent, e, "modem");
         copy(intent, e, "hfp_pcm_dev_id");

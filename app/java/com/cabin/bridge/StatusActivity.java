@@ -22,7 +22,6 @@ public class StatusActivity extends Activity implements SharedPreferences.OnShar
     private SharedPreferences prefs;
     private Switch swOn;
     private RadioGroup rgMode;
-    private RadioGroup rgAudio;
     private CheckBox cbMedia;
     /** True while render() sets widgets, so their listeners don't send requests. */
     private boolean rendering;
@@ -34,7 +33,6 @@ public class StatusActivity extends Activity implements SharedPreferences.OnShar
         prefs = Prefs.get(this);
         swOn = findViewById(R.id.sw_on);
         rgMode = findViewById(R.id.rg_mode);
-        rgAudio = findViewById(R.id.rg_audio);
         cbMedia = findViewById(R.id.cb_media);
 
         swOn.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
@@ -47,12 +45,6 @@ public class StatusActivity extends Activity implements SharedPreferences.OnShar
             @Override
             public void onCheckedChanged(RadioGroup g, int id) {
                 if (!rendering) request("MODE", selectedMode());
-            }
-        });
-        rgAudio.setOnCheckedChangeListener(new RadioGroup.OnCheckedChangeListener() {
-            @Override
-            public void onCheckedChanged(RadioGroup g, int id) {
-                if (!rendering) request("CALL_AUDIO", id == R.id.rb_audio_phone ? "phone" : "tablet");
             }
         });
         cbMedia.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
@@ -189,10 +181,8 @@ public class StatusActivity extends Activity implements SharedPreferences.OnShar
             String shown = on ? mode : Prefs.lastOn(this);
             swOn.setChecked(on);
             rgMode.check(Prefs.MODE_SAP.equals(shown) ? R.id.rb_sap : R.id.rb_hfp);
-            rgAudio.check(Prefs.audioOnTablet(this) ? R.id.rb_audio_tablet : R.id.rb_audio_phone);
             cbMedia.setChecked(prefs.getBoolean("media_sink", false));
             boolean hfp = Prefs.MODE_HFP.equals(mode);
-            for (int i = 0; i < rgAudio.getChildCount(); i++) rgAudio.getChildAt(i).setEnabled(hfp);
             cbMedia.setEnabled(hfp);
 
             TextView pending = findViewById(R.id.status_pending);
@@ -240,7 +230,6 @@ public class StatusActivity extends Activity implements SharedPreferences.OnShar
         if (p == null) return "";
         if (p.equals("MODE=off")) return "Turning Cabin off… Bluetooth restarts (about 5 seconds).";
         if (p.startsWith("MODE=")) return "Turning Cabin on… Bluetooth restarts (about 5 seconds), then your phone reconnects.";
-        if (p.startsWith("CALL_AUDIO=")) return "Saving call audio setting…";
         return "Applying " + p + "… Bluetooth restarts (about 5 seconds).";
     }
 
