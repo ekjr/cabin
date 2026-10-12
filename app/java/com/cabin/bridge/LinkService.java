@@ -235,6 +235,10 @@ public class LinkService extends Service {
     /** Call audio link state from the Bluetooth app's broadcasts: 0 down, 1 connecting, 2 up. */
     private static volatile int hfpAudio;
 
+    static boolean callAudioUp() {
+        return hfpAudio == BtReflect.AUDIO_CONNECTED;
+    }
+
     /** When the current call went active (0 = no active call), and re-requests since then. */
     private long activeSince;
     private int audioRetries;
@@ -480,10 +484,12 @@ public class LinkService extends Service {
         int state = intent.getIntExtra(BluetoothProfile.EXTRA_STATE, -1);
         if (state >= 0) hfpAudio = state;
         if (state == 0) {
+            HalfRelay.onCallAudio(this, false);
             onHfpAudioLost();
             return;
         }
         if (state != BtReflect.AUDIO_CONNECTED) return;
+        HalfRelay.onCallAudio(this, true);
         android.media.AudioManager am = getSystemService(android.media.AudioManager.class);
         if (am == null) return;
         boolean wbs = intent.getBooleanExtra(BtReflect.EXTRA_AUDIO_WBS, false);

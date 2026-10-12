@@ -16,6 +16,11 @@ final class Prefs {
         return context.getSharedPreferences(FILE, Context.MODE_PRIVATE);
     }
 
+    /** Experimental headset relay: "off", "media" or "call" (see README). */
+    static String relay(Context context) {
+        return get(context).getString("relay", "off");
+    }
+
     static String mode(Context context) {
         return get(context).getString("mode", MODE_HFP);
     }

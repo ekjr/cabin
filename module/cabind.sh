@@ -4,6 +4,7 @@
 #   op=insert  write a received text into the system SMS database
 #   op=update  mark a forwarded reply as sent
 #   op=set     change a Cabin setting (mode on/off/hfp/sap, call audio, ...)
+#   op=bt      value=restart: restart Bluetooth (clears a stuck call-audio link)
 MODDIR=${0%/*}
 LOG=/data/adb/cabin/cabind.log
 Q=/data/data/com.cabin.bridge/files/cabin-queue
@@ -77,6 +78,12 @@ handle() {
     set)
       log "app asks $key=$value"
       run_cabin from-app "$key" "$value"
+      ;;
+    relay)
+      case "$value" in start|stop) run_cabin "relay-$value" ;; esac
+      ;;
+    bt)
+      [ "$value" = restart ] && { log "app asks to reset Bluetooth"; run_cabin restart-bt; }
       ;;
     *)
       log "ignored $1"

@@ -85,6 +85,17 @@ public class StatusActivity extends Activity implements SharedPreferences.OnShar
                 LinkService.pullUnread();
             }
         });
+        findViewById(R.id.btn_reset_bt).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (!RootQueue.enqueue(StatusActivity.this, "op=bt\nvalue=restart\n")) {
+                    detail("Could not reach the Cabin module. Is it installed and the device rebooted?");
+                    return;
+                }
+                detail("Restarting Bluetooth. Your phone reconnects in a few seconds; pairings are kept.\n\n"
+                        + "If calls still have static, also turn Bluetooth off and on on your phone.");
+            }
+        });
         findViewById(R.id.btn_sap).setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(final View v) {

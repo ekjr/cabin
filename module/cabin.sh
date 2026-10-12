@@ -5,7 +5,7 @@
 #   cabin hfp | sap                switch mode (and turn on)
 #   cabin set KEY VALUE            MEDIA_SINK 0|1, HFP_AG auto|keep|off,
 #                                  CALL_HANDLER auto|system|cabin, MIC_BOOST 0|6|12|18|24,
-#                                  HFP_MIC single|dual
+#                                  HFP_MIC single|dual, RELAY off|media|call (experimental)
 #   cabin status                   show mode, settings and Bluetooth profile state
 #   cabin restart-bt               restart Bluetooth so profile changes take effect
 #   cabin sap-report               what this device's modem offers for SAP mode
@@ -65,6 +65,7 @@ load_conf() {
   CALL_HANDLER=auto
   MIC_BOOST=12
   HFP_MIC=single
+  RELAY=off
   [ -f "$CONF" ] || return 0
   while IFS='=' read -r k v; do
     case "$k" in
@@ -75,6 +76,7 @@ load_conf() {
       CALL_HANDLER) case "$v" in auto|system|cabin) CALL_HANDLER=$v ;; esac ;;
       MIC_BOOST) case "$v" in 0|6|12|18|24) MIC_BOOST=$v ;; esac ;;
       HFP_MIC) case "$v" in single|dual) HFP_MIC=$v ;; esac ;;
+      RELAY) case "$v" in off|media|call) RELAY=$v ;; esac ;;
     esac
   done < "$CONF"
 }
@@ -88,6 +90,7 @@ HFP_AG=$HFP_AG
 CALL_HANDLER=$CALL_HANDLER
 MIC_BOOST=$MIC_BOOST
 HFP_MIC=$HFP_MIC
+RELAY=$RELAY
 EOF
   mv "$CONF.tmp" "$CONF"
 }
@@ -542,7 +545,7 @@ notify_app() {
   if [ "$MEDIA_SINK" = 1 ]; then ms=true; else ms=false; fi
   am broadcast -f 0x20 -n "$PKG/.ConfigReceiver" -a com.cabin.bridge.CONFIG \
     --es mode "$MODE" --es last_on "$LAST_ON" \
-    --ez media_sink "$ms" --es hfp_ag "$HFP_AG" --es modem "$(modem_kind)" \
+    --ez media_sink "$ms" --es hfp_ag "$HFP_AG" --es relay "$RELAY" --es modem "$(modem_kind)" \
     --es hfp_pcm_dev_id "$(hfp_pcm_dev_id)" >/dev/null 2>&1
 }
 
@@ -586,6 +589,7 @@ set_key() {
     CALL_HANDLER=auto|CALL_HANDLER=system|CALL_HANDLER=cabin) CALL_HANDLER=$2 ;;
     MIC_BOOST=0|MIC_BOOST=6|MIC_BOOST=12|MIC_BOOST=18|MIC_BOOST=24) MIC_BOOST=$2 ;;
     HFP_MIC=single|HFP_MIC=dual) HFP_MIC=$2 ;;
+    RELAY=off|RELAY=media|RELAY=call) RELAY=$2 ;;
     *) return 1 ;;
   esac
 }
@@ -604,6 +608,7 @@ status() {
   echo "hfp ag:      $HFP_AG"
   echo "mic boost:   +${MIC_BOOST} dB (car-kit calls)"
   echo "earpiece mic: $HFP_MIC (car-kit calls)"
+  echo "relay:       $RELAY (experimental)"
   echo "calls via:   $CALL_HANDLER ($(cabin_handles_calls && echo cabin || echo system))"
   echo "modem:       $(modem_kind)"
   echo "bluetooth:   $(bt_pkg), on=$(settings get global bluetooth_on 2>/dev/null)"
@@ -625,6 +630,32 @@ fi
 load_conf
 cmd=$1
 [ $# -gt 0 ] && shift
+# RELAY=media (experimental): copy the caller's voice from the Bluetooth line into the app's
+# files dir; the app plays it to a Bluetooth headset as media. Qualcomm: MultiMedia10 is a plain capture
+# front end (pcm 27); the loopback ones (MultiMedia6/8) must not be used for this.
+RELAY_APP=/data/data/com.cabin.bridge/files
+relay_start() {
+  relay_stop
+  [ "$RELAY" = media ] || return 0
+  f=$RELAY_APP/relay.pcm
+  : > "$f"
+  chown "$(stat -c %u:%g "$RELAY_APP")" "$f"
+  chcon "$(stat -c %C "$RELAY_APP")" "$f"
+  tinymix 'MultiMedia10 Mixer INTERNAL_BT_SCO_TX' 1 >/dev/null 2>&1
+  setsid tinycap "$f" -D 0 -d 27 -c 1 -r 8000 -b 16 -T 7200 </dev/null >/dev/null 2>&1 &
+  echo $! > "$DATA/relay.pid"
+  am broadcast -n com.cabin.bridge/.HalfRelay -a com.cabin.bridge.RELAY --es state start >/dev/null 2>&1
+  log "relay started"
+}
+relay_stop() {
+  [ -f "$DATA/relay.pid" ] || return 0
+  kill "$(cat "$DATA/relay.pid")" 2>/dev/null
+  rm -f "$DATA/relay.pid" "$RELAY_APP/relay.pcm"
+  tinymix 'MultiMedia10 Mixer INTERNAL_BT_SCO_TX' 0 >/dev/null 2>&1
+  am broadcast -n com.cabin.bridge/.HalfRelay -a com.cabin.bridge.RELAY --es state stop >/dev/null 2>&1
+  log "relay stopped"
+}
+
 case "$cmd" in
   boot-props)
     save_orig
@@ -657,7 +688,7 @@ case "$cmd" in
     key=$1
     val=$2
     case "$key" in
-      MODE|MEDIA_SINK|HFP_AG|CALL_HANDLER|MIC_BOOST|HFP_MIC) ;;
+      MODE|MEDIA_SINK|HFP_AG|CALL_HANDLER|MIC_BOOST|HFP_MIC|RELAY) ;;
       *) echo "cabin: unknown setting $key" >&2; log "rejected key"; exit 2 ;;
     esac
     old_mode=$MODE
@@ -682,6 +713,12 @@ case "$cmd" in
   refresh-audio)
     refresh_audio
     notify_app
+    ;;
+  relay-start)
+    relay_start
+    ;;
+  relay-stop)
+    relay_stop
     ;;
   sap-report)
     sap_report

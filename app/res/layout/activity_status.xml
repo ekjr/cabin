@@ -170,6 +170,14 @@
             android:text="Pull unread texts" />
 
         <Button
+            android:id="@+id/btn_reset_bt"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:minHeight="48dp"
+            android:text="Reset Bluetooth" />
+
+        <Button
             android:id="@+id/btn_sap"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

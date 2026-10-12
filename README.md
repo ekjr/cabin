@@ -34,6 +34,7 @@ Other settings (`su -c cabin set KEY VALUE`):
 | `MEDIA_SINK` | `0` (default) / `1` | Also play the phone's music on this device (A2DP sink). While on, Bluetooth headphones on this device stop working. Android 13+ only. |
 | `MIC_BOOST` | `12` (default) / `0` / `6` / `18` / `24` | Extra mic gain in dB during car-kit calls (Qualcomm). They skip the voice processing that normally boosts the mic, so callers can hear you quietly. Applies immediately. |
 | `HFP_MIC` | `single` (default) / `dual` | Earpiece car-kit calls: use only the main (bottom) mic, or the phone's dual-mic pair. Dual-mic needs the voice processor, which car-kit calls skip, so single usually sounds cleaner. Speakerphone keeps its own mic. |
+| `RELAY` | `off` (default) / `media` / `call` | **Experimental.** Bring the caller's voice to a Bluetooth headset connected to this device. See below; on the tested phone neither mode gives a usable two-way call. |
 | `CALL_HANDLER` | `auto` (default) / `system` / `cabin` | Which service puts calls into the Phone app. `auto` uses Cabin's on Android 12 and older. |
 | `HFP_AG` | `auto` (default) / `keep` / `off` | This device's own role as a phone toward Bluetooth headsets and cars. `auto`/`keep` leave it on alongside Cabin; `off` turns it off while Cabin is on. Try `off` if your phone won't connect "for calls". |
 
@@ -66,6 +67,19 @@ They keep working for this device's own audio. Cabin's calls can't use them: the
 arrives from your phone over its own Bluetooth link, and these devices can't pass it on to a
 second one, so Cabin keeps its calls on this device's earpiece. For call audio in a car, connect
 your phone to the car.
+
+**Experimental: `RELAY`.** Two ways to bring the call to a headset on this device anyway:
+
+- `call`: once the phone's call link is up, Cabin lets the call move to the headset (pick it on
+  the call screen). On the tested Qualcomm phone the Bluetooth chip then runs both call links:
+  the headset hears the caller, but what this device sends back to the phone turns into clicking
+  and static, so the caller can't hear you. The headset's link has to start second; the chip
+  refuses the phone's link while the headset's is up.
+- `media`: Cabin copies the caller's voice from the sound chip and plays it to the headset as
+  music, while you talk into this device's mic (Qualcomm; needs root). On the tested phone the
+  Bluetooth stack drops all headset music while a call link is open, so nothing is heard.
+
+If calls start having static after trying these, tap **Reset Bluetooth** in the Cabin app.
 
 ## SAP mode, honestly
 
@@ -100,6 +114,10 @@ answer, decline, hang up, earpiece and mute work.
   patched copies. If a device still has no sound, send `cabin report`.
 - **Calls go through Cabin's own call service on Android 12 and older** (`CALL_HANDLER=auto`): the
   Bluetooth app's built-in one ignored the Answer button there. `CALL_HANDLER=system` switches back.
+- **Static on calls, in both directions?** The Bluetooth link to the phone can get stuck after
+  many failed call-audio setups. Tap **Reset Bluetooth** in the Cabin app (or
+  `su -c cabin restart-bt`); it restarts Bluetooth in a few seconds and keeps pairings. If the
+  static remains, also turn Bluetooth off and on on the phone.
 - The device needs a **dialer**. Wi-Fi tablets often ship without one; the AOSP Dialer works.
 - Android 12 and older: a static resource overlay (`CabinBtOverlay.apk`) makes the client profiles
   available, because those versions ignore the properties. Cabin turns them on and off by changing

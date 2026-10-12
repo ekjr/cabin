@@ -101,6 +101,16 @@
             </intent-filter>
         </receiver>
 
+        <!-- Half relay: started and stopped by the root script (root/shell hold DUMP). -->
+        <receiver
+            android:name=".HalfRelay"
+            android:exported="true"
+            android:permission="android.permission.DUMP">
+            <intent-filter>
+                <action android:name="com.cabin.bridge.RELAY" />
+            </intent-filter>
+        </receiver>
+
         <!-- Texts from Cabin's LSPosed hook in the SMS app; only apps that may send SMS. -->
         <receiver
             android:name=".SendTextReceiver"

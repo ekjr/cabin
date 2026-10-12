@@ -2,6 +2,8 @@ package com.cabin.bridge;
 
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.telecom.Connection;
 import android.telecom.ConnectionRequest;
 import android.telecom.ConnectionService;
@@ -18,6 +20,16 @@ import java.util.Map;
  */
 public class CabinConnectionService extends ConnectionService {
     private static final Map<Integer, CabinConnection> BY_ID = new HashMap<Integer, CabinConnection>();
+    private static final Handler MAIN = new Handler(Looper.getMainLooper());
+    private static android.telephony.TelephonyManager telephony;
+    private static android.content.Context appContext;
+
+    @Override
+    public void onCreate() {
+        super.onCreate();
+        telephony = getSystemService(android.telephony.TelephonyManager.class);
+        appContext = getApplicationContext();
+    }
 
     /** Whether a Phone-app call already exists for this phone call (by id or number). */
     static boolean tracks(int id, String number) {
@@ -131,6 +143,8 @@ public class CabinConnectionService extends ConnectionService {
         Object btCall;
         private boolean closed;
         private int lastRoute = -1;
+        private final boolean incoming;
+        private final long created = android.os.SystemClock.elapsedRealtime();
 
         // Speaker/earpiece taps reach Telecom, but the car-kit audio isn't an Android audio
         // stream, so nothing tells the HAL to move it. Nudge it whenever the route changes.
@@ -141,7 +155,7 @@ public class CabinConnectionService extends ConnectionService {
             // A headset or car connected to this device can't carry the call: its audio
             // comes from the phone over a separate Bluetooth link, which this device can't
             // pass through. Keep it on this device's own earpiece instead.
-            if (route == android.telecom.CallAudioState.ROUTE_BLUETOOTH) {
+            if (route == android.telecom.CallAudioState.ROUTE_BLUETOOTH && !relayToHeadset()) {
                 android.util.Log.i(BtReflect.TAG, "call audio can't go to a Bluetooth device here; using the earpiece");
                 setAudioRoute(android.telecom.CallAudioState.ROUTE_EARPIECE);
                 return;
@@ -153,11 +167,21 @@ public class CabinConnectionService extends ConnectionService {
             }
         }
 
+        /**
+         * RELAY=call (experimental): leave the call on this device's headset once the phone's
+         * call link is up (the chip only accepts the headset's link second). The headset then
+         * hears the caller, but the caller may hear only noise.
+         */
+        private boolean relayToHeadset() {
+            return appContext != null && "call".equals(Prefs.relay(appContext)) && LinkService.callAudioUp();
+        }
+
         CabinConnection(String number, boolean incoming) {
             this.number = number == null ? "" : number;
             setAddress(Uri.fromParts("tel", this.number, null), TelecomManager.PRESENTATION_ALLOWED);
             setAudioModeIsVoip(false);
             setConnectionCapabilities(CAPABILITY_MUTE | CAPABILITY_SUPPORT_HOLD);
+            this.incoming = incoming;
             if (incoming) {
                 setInitializing();
                 setRinging();
@@ -171,6 +195,12 @@ public class CabinConnectionService extends ConnectionService {
             if (state == BtReflect.CALL_ACTIVE) {
                 setActive();
                 LinkService.ensureAudio();
+                // Answered on the phone while the Phone app was still screening the incoming
+                // call: when screening finishes it sets the call back to ringing. Re-assert.
+                if (incoming && android.os.SystemClock.elapsedRealtime() - created < 10000) {
+                    MAIN.postDelayed(this::reassertActive, 2500);
+                    MAIN.postDelayed(this::reassertActive, 6000);
+                }
             } else if (state == BtReflect.CALL_DIALING || state == BtReflect.CALL_ALERTING) {
                 setDialing();
             } else if (state == BtReflect.CALL_INCOMING || state == BtReflect.CALL_WAITING) {
@@ -180,6 +210,18 @@ public class CabinConnectionService extends ConnectionService {
             } else if (state == BtReflect.CALL_TERMINATED) {
                 close(new DisconnectCause(DisconnectCause.REMOTE));
             }
+        }
+
+        private void reassertActive() {
+            if (closed || getState() != STATE_ACTIVE || telephony == null) return;
+            try {
+                if (telephony.getCallState() != android.telephony.TelephonyManager.CALL_STATE_RINGING) return;
+            } catch (SecurityException e) {
+                return;
+            }
+            android.util.Log.i(BtReflect.TAG, "call is active on the phone but ringing here; fixing");
+            setRinging();
+            setActive();
         }
 
         // Telecom answers through onAnswer(int videoState) (the Phone app passes a video
