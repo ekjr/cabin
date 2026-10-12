@@ -90,6 +90,17 @@ final class BtReflect {
                 new Class[]{BluetoothDevice.class, call.getClass()}, new Object[]{device, call});
     }
 
+    /** BluetoothHeadsetClient audio state: 0 disconnected, 1 connecting, 2 connected; -1 unknown. */
+    static int audioState(Object profile, BluetoothDevice device) {
+        try {
+            Object v = profile.getClass().getMethod("getAudioState", BluetoothDevice.class)
+                    .invoke(profile, device);
+            return v instanceof Integer ? (Integer) v : -1;
+        } catch (Throwable t) {
+            return -1;
+        }
+    }
+
     static boolean connectAudio(Object profile, BluetoothDevice device) {
         return invokeBool(profile, "connectAudio",
                 new Class[]{BluetoothDevice.class}, new Object[]{device});

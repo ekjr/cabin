@@ -232,6 +232,28 @@ public class LinkService extends Service {
         }, "cabin-route").start();
     }
 
+    /**
+     * When a call becomes active the Phone app takes audio focus, and the Bluetooth app's
+     * car-kit code drops the call's audio link when it loses focus (seen on Android 11 for calls
+     * started on the phone: the link was up, then the device itself disconnected it 14 ms after
+     * the call went active, leaving the audio on the phone). Ask for it again if it's gone.
+     */
+    private void keepAudioHere() {
+        if (!Prefs.audioOnTablet(this)) return;
+        for (long delay : new long[]{600, 2000}) {
+            handler.postDelayed(new Runnable() {
+                @Override
+                public void run() {
+                    if (hfp == null || phone == null || CALLS.isEmpty()) return;
+                    if (BtReflect.audioState(hfp, phone) == 0) {
+                        Log.i(BtReflect.TAG, "call audio link dropped; asking the phone for it again");
+                        BtReflect.connectAudio(hfp, phone);
+                    }
+                }
+            }, delay);
+        }
+    }
+
     static void ensureAudio() {
         LinkService s = self;
         if (s == null || s.hfp == null || s.phone == null) return;
@@ -436,7 +458,10 @@ public class LinkService extends Service {
                 announced.remove(token);
             }
             CabinConnectionService.onRemote(id, number, state, call);
-            if (state == BtReflect.CALL_ACTIVE) ensureAudio();
+            if (state == BtReflect.CALL_ACTIVE) {
+                ensureAudio();
+                keepAudioHere();
+            }
             if (state == BtReflect.CALL_TERMINATED) stopCallAlert();
         } else if (state == BtReflect.CALL_ACTIVE && !Prefs.audioOnTablet(this)
                 && hfp != null && phone != null) {
