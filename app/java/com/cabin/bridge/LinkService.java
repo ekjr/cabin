@@ -232,33 +232,45 @@ public class LinkService extends Service {
         }, "cabin-route").start();
     }
 
+    /** Call audio link state from the Bluetooth app's broadcasts: 0 down, 1 connecting, 2 up. */
+    private static volatile int hfpAudio;
+
+    /** When the current call went active (0 = no active call), and re-requests since then. */
+    private long activeSince;
+    private int audioRetries;
+
     /**
-     * When a call becomes active the Phone app takes audio focus, and the Bluetooth app's
-     * car-kit code drops the call's audio link when it loses focus (seen on Android 11 for calls
-     * started on the phone: the link was up, then the device itself disconnected it 14 ms after
-     * the call went active, leaving the audio on the phone). Ask for it again if it's gone.
+     * The call's audio link to the phone just closed. When a call becomes active the Phone app
+     * takes audio focus, and Android 11's car-kit code drops the link when it loses focus: seen
+     * for calls started on the phone, where this device disconnected the link 1 ms after the
+     * call went active and the audio fell back to the phone. Ask for it again, but only right
+     * after the call went active and at most twice, so moving a call to the phone on purpose
+     * later still works.
      */
-    private void keepAudioHere() {
-        if (!Prefs.audioOnTablet(this)) return;
-        for (long delay : new long[]{600, 2000}) {
-            handler.postDelayed(new Runnable() {
-                @Override
-                public void run() {
-                    if (hfp == null || phone == null || CALLS.isEmpty()) return;
-                    if (BtReflect.audioState(hfp, phone) == 0) {
-                        Log.i(BtReflect.TAG, "call audio link dropped; asking the phone for it again");
-                        BtReflect.connectAudio(hfp, phone);
-                    }
-                }
-            }, delay);
-        }
+    private void onHfpAudioLost() {
+        if (!Prefs.audioOnTablet(this) || activeSince == 0) return;
+        if (System.currentTimeMillis() - activeSince > 5000 || audioRetries >= 2) return;
+        audioRetries++;
+        handler.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                if (hfp == null || phone == null || CALLS.isEmpty() || hfpAudio != 0) return;
+                Log.i(BtReflect.TAG, "call audio went back to the phone; asking for it here again");
+                BtReflect.connectAudio(hfp, phone);
+            }
+        }, 300);
     }
 
     static void ensureAudio() {
         LinkService s = self;
         if (s == null || s.hfp == null || s.phone == null) return;
-        if (Prefs.audioOnTablet(s)) BtReflect.connectAudio(s.hfp, s.phone);
-        else BtReflect.disconnectAudio(s.hfp, s.phone);
+        // Asking for audio while the link is already up or opening clashes with the open link
+        // on some stacks ("sco_create: Index already in use") and can wedge it.
+        if (Prefs.audioOnTablet(s)) {
+            if (hfpAudio == 0) BtReflect.connectAudio(s.hfp, s.phone);
+        } else if (hfpAudio != 0) {
+            BtReflect.disconnectAudio(s.hfp, s.phone);
+        }
     }
 
     static Object callObject(int id) {
@@ -459,8 +471,13 @@ public class LinkService extends Service {
             }
             CabinConnectionService.onRemote(id, number, state, call);
             if (state == BtReflect.CALL_ACTIVE) {
+                if (activeSince == 0) {
+                    activeSince = System.currentTimeMillis();
+                    audioRetries = 0;
+                }
                 ensureAudio();
-                keepAudioHere();
+            } else if (state == BtReflect.CALL_TERMINATED && CALLS.isEmpty()) {
+                activeSince = 0;
             }
             if (state == BtReflect.CALL_TERMINATED) stopCallAlert();
         } else if (state == BtReflect.CALL_ACTIVE && !Prefs.audioOnTablet(this)
@@ -481,6 +498,11 @@ public class LinkService extends Service {
      */
     private void onHfpAudio(Intent intent) {
         int state = intent.getIntExtra(BluetoothProfile.EXTRA_STATE, -1);
+        if (state >= 0) hfpAudio = state;
+        if (state == 0) {
+            onHfpAudioLost();
+            return;
+        }
         if (state != BtReflect.AUDIO_CONNECTED || !Prefs.audioOnTablet(this)) return;
         android.media.AudioManager am = getSystemService(android.media.AudioManager.class);
         if (am == null) return;
