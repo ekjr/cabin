@@ -113,8 +113,9 @@ final class BtReflect {
      * Android's BluetoothHeadset.disableWBS() is hidden from the public SDK; its
      * implementation configures the Bluetooth HFP codec, not merely the audio HAL rate.
      */
-    static boolean disableWbs(Object profile) {
-        return invokeBool(profile, "disableWBS", new Class[0], new Object[0]);
+    static boolean setWidebandEnabled(Object profile, boolean enabled) {
+        return invokeBool(profile, enabled ? "enableWBS" : "disableWBS",
+                new Class[0], new Object[0]);
     }
 
     static boolean dial(Object profile, BluetoothDevice device, String number) {
