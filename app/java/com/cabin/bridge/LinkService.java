@@ -259,15 +259,23 @@ public class LinkService extends Service {
         LinkService s = self;
         if (s == null) return;
         s.hfpCvsdRequested = false;
-        s.scheduleHfpCodecRequest();
+        // This is called only when the user changes HFP_CODEC. If they switch from
+        // CVSD back to auto, explicitly restore wideband support; don't touch defaults.
+        s.handler.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                s.applyHfpCodecPreferenceNow(true);
+            }
+        }, 700);
     }
 
-    /** Schedule the codec request after Android reports the headset HFP connection ready. */
+    /** Only request narrowband automatically when the headset HFP link becomes ready. */
     private void scheduleHfpCodecRequest() {
+        if (!"cvsd".equals(Prefs.hfpCodec(this))) return;
         handler.postDelayed(new Runnable() {
             @Override
             public void run() {
-                applyHfpCodecPreferenceNow();
+                applyHfpCodecPreferenceNow(false);
             }
         }, 700);
     }
@@ -275,9 +283,12 @@ public class LinkService extends Service {
     /**
      * Applies the HFP Audio Gateway's hidden WBS/NBS setting before headset SCO opens.
      * The framework rejects enableWBS/disableWBS while its own SCO audio is active.
+     * restoreWideband is true only when the user explicitly switches back to auto.
      */
-    private void applyHfpCodecPreferenceNow() {
-        if (hfpCvsdRequested && "cvsd".equals(Prefs.hfpCodec(this))) return;
+    private void applyHfpCodecPreferenceNow(boolean restoreWideband) {
+        boolean narrowband = "cvsd".equals(Prefs.hfpCodec(this));
+        if (!narrowband && !restoreWideband) return;
+        if (hfpCvsdRequested && narrowband) return;
         Object profile = hfpAg;
         if (profile == null) {
             Log.i(BtReflect.TAG, "HFP codec preference pending: headset profile is not bound yet");
@@ -288,7 +299,6 @@ public class LinkService extends Service {
             Log.i(BtReflect.TAG, "HFP codec preference pending: no HFP headset is connected");
             return;
         }
-        boolean narrowband = "cvsd".equals(Prefs.hfpCodec(this));
         boolean accepted = BtReflect.setWidebandEnabled(profile, !narrowband);
         Log.i(BtReflect.TAG, "HFP codec preference=" + (narrowband ? "CVSD/NBS" : "WBS enabled")
                 + ", request accepted=" + accepted + ", connected headsets=" + headsets.size());
