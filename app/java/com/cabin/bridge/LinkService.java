@@ -427,6 +427,11 @@ public class LinkService extends Service {
                     placeIncoming(id, number);
                     maybeNotifyCall(number);
                 }
+            } else if ((state == BtReflect.CALL_DIALING || state == BtReflect.CALL_ALERTING
+                    || state == BtReflect.CALL_ACTIVE || state == BtReflect.CALL_HELD)
+                    && !CabinConnectionService.tracks(id, number) && announced.add(token)) {
+                // Started on the phone itself: show it in the Phone app here too.
+                placeUnknown(id, number, state);
             } else if (state == BtReflect.CALL_TERMINATED) {
                 announced.remove(token);
             }
@@ -482,6 +487,29 @@ public class LinkService extends Service {
         if (id == null || !id.matches("[0-9]+")) return;
         android.media.AudioManager am = context.getSystemService(android.media.AudioManager.class);
         if (am != null) am.setParameters("hfp_pcm_dev_id=" + id);
+    }
+
+    static boolean audioOnThisDevice() {
+        LinkService s = self;
+        return s == null || Prefs.audioOnTablet(s);
+    }
+
+    /** Adds a call that was started on the phone (Telecom's "unknown call", a system API). */
+    private void placeUnknown(int id, String number, int state) {
+        if (number == null) number = "";
+        TelecomManager telecom = getSystemService(TelecomManager.class);
+        if (telecom == null) return;
+        Bundle extras = new Bundle();
+        extras.putParcelable("android.telecom.extra.UNKNOWN_CALL_HANDLE", Uri.fromParts("tel", number, null));
+        extras.putString("cabin_number", number);
+        extras.putInt("cabin_id", id);
+        extras.putInt("cabin_state", state);
+        try {
+            telecom.getClass().getMethod("addNewUnknownCall", PhoneAccountHandle.class, Bundle.class)
+                    .invoke(telecom, ourHandle(), extras);
+        } catch (Throwable t) {
+            Log.w(BtReflect.TAG, "addNewUnknownCall failed", t);
+        }
     }
 
     private void placeIncoming(int id, String number) {

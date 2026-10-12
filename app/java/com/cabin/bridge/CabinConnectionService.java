@@ -19,6 +19,24 @@ import java.util.Map;
 public class CabinConnectionService extends ConnectionService {
     private static final Map<Integer, CabinConnection> BY_ID = new HashMap<Integer, CabinConnection>();
 
+    /** Whether a Phone-app call already exists for this phone call (by id or number). */
+    static boolean tracks(int id, String number) {
+        if (id >= 0 && BY_ID.containsKey(id)) return true;
+        for (CabinConnection c : BY_ID.values()) {
+            if (sameNumber(c.number, number)) return true;
+        }
+        return false;
+    }
+
+    /** "+16468208701" vs "6468208701": compare digits, allowing a country code on one side. */
+    static boolean sameNumber(String a, String b) {
+        if (a == null || b == null) return false;
+        String x = a.replaceAll("[^0-9]", "");
+        String y = b.replaceAll("[^0-9]", "");
+        if (x.length() < 7 || y.length() < 7) return x.equals(y) && x.length() > 0;
+        return x.endsWith(y) || y.endsWith(x);
+    }
+
     static void remember(int id, String number) {
         CabinConnection existing = BY_ID.get(id);
         if (existing != null) existing.number = number == null ? "" : number;
@@ -46,6 +64,24 @@ public class CabinConnectionService extends ConnectionService {
         CabinConnection connection = new CabinConnection(number, true);
         connection.btCall = LinkService.callObject(id);
         if (id >= 0) BY_ID.put(id, connection);
+        return connection;
+    }
+
+    /**
+     * A call started on the phone itself (not from this device), shown in the Phone app.
+     * Overrides ConnectionService's hidden onCreateUnknownConnection; not in the public SDK,
+     * so no @Override, but Telecom calls it by this exact signature.
+     */
+    public Connection onCreateUnknownConnection(PhoneAccountHandle account, ConnectionRequest request) {
+        String number = readNumber(request);
+        int id = readId(request);
+        Bundle extras = request.getExtras();
+        int state = extras == null ? BtReflect.CALL_DIALING : extras.getInt("cabin_state", BtReflect.CALL_DIALING);
+        CabinConnection connection = new CabinConnection(number, false);
+        connection.btCall = LinkService.callObject(id);
+        if (id >= 0) BY_ID.put(id, connection);
+        connection.applyRemote(state);
+        android.util.Log.i(BtReflect.TAG, "call started on the phone, now in the Phone app");
         return connection;
     }
 
@@ -102,6 +138,14 @@ public class CabinConnectionService extends ConnectionService {
         public void onCallAudioStateChanged(android.telecom.CallAudioState state) {
             if (state == null || closed) return;
             int route = state.getRoute();
+            // A headset or car connected to this device can't carry the call: its audio
+            // comes from the phone over a separate Bluetooth link, which this device can't
+            // pass through. Keep it on this device's own earpiece instead.
+            if (route == android.telecom.CallAudioState.ROUTE_BLUETOOTH && LinkService.audioOnThisDevice()) {
+                android.util.Log.i(BtReflect.TAG, "call audio can't go to a Bluetooth device here; using the earpiece");
+                setAudioRoute(android.telecom.CallAudioState.ROUTE_EARPIECE);
+                return;
+            }
             if (route != lastRoute) {
                 boolean first = lastRoute == -1;
                 lastRoute = route;

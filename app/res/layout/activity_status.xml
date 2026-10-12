@@ -67,7 +67,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:minHeight="48dp"
-                android:text="Hands-free (HFP) - your phone keeps the SIM. Works with any phone, alongside Android Auto." />
+                android:text="Hands-free (HFP) - your phone keeps the SIM. Works with any phone." />
 
             <RadioButton
                 android:id="@+id/rb_sap"
@@ -102,7 +102,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:minHeight="48dp"
-                android:text="On the phone or car (use with Android Auto)" />
+                android:text="On the phone (leave the call audio there)" />
         </RadioGroup>
 
         <CheckBox
@@ -111,7 +111,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
             android:minHeight="48dp"
-            android:text="Also play the phone's music here (A2DP sink). Leave off for Android Auto; Bluetooth headphones on this device stop working while it's on." />
+            android:text="Also play the phone's music here (A2DP sink). Bluetooth headphones on this device stop working while it's on." />
 
         <TextView
             android:id="@+id/status_link"

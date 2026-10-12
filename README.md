@@ -6,7 +6,7 @@ A Magisk / KernelSU / APatch module that makes an Android tablet (or any Android
 - incoming calls ring in the tablet's **own Phone app**: answer, decline, hang up and dial out from there
 - texts land in the tablet's **own Messages app**, and replies go out through the phone
 - contacts sync over so calls show names
-- it can stay connected while the phone (or the tablet) runs **Android Auto**
+- the device's own Bluetooth headsets and car stay usable; Cabin's calls stay on the device itself
 
 Two ways to reach the phone:
 
@@ -31,12 +31,12 @@ Other settings (`su -c cabin set KEY VALUE`):
 
 | Key | Values | Meaning |
 |---|---|---|
-| `CALL_AUDIO` | `tablet` (default) / `phone` | Where you hear the call. Use `phone` when the phone is also on a car's Android Auto, so call audio stays in the car. |
-| `MEDIA_SINK` | `0` (default) / `1` | Also play the phone's music on the tablet (A2DP sink). Keep `0` with Android Auto. While on, Bluetooth headphones on the tablet won't work. Android 13+ only. |
+| `CALL_AUDIO` | `tablet` (default) / `phone` | Where you hear Cabin calls: on this device, or left on the phone. |
+| `MEDIA_SINK` | `0` (default) / `1` | Also play the phone's music on this device (A2DP sink). While on, Bluetooth headphones on this device stop working. Android 13+ only. |
 | `MIC_BOOST` | `12` (default) / `0` / `6` / `18` / `24` | Extra mic gain in dB during car-kit calls (Qualcomm). They skip the voice processing that normally boosts the mic, so callers can hear you quietly. Applies immediately. |
 | `HFP_MIC` | `single` (default) / `dual` | Earpiece car-kit calls: use only the main (bottom) mic, or the phone's dual-mic pair. Dual-mic needs the voice processor, which car-kit calls skip, so single usually sounds cleaner. Speakerphone keeps its own mic. |
 | `CALL_HANDLER` | `auto` (default) / `system` / `cabin` | Which service puts calls into the Phone app. `auto` uses Cabin's on Android 12 and older. |
-| `HFP_AG` | `auto` (default) / `keep` / `off` | The device's own role as a phone toward Bluetooth headsets and car head units (Android Auto needs it). `auto` and `keep` leave it on alongside Cabin; `off` turns it off while Cabin is on. Try `off` if your phone won't connect "for calls" or Bluetooth is unstable. |
+| `HFP_AG` | `auto` (default) / `keep` / `off` | This device's own role as a phone toward Bluetooth headsets and cars. `auto`/`keep` leave it on alongside Cabin; `off` turns it off while Cabin is on. Try `off` if your phone won't connect "for calls". |
 
 ## Install
 
@@ -61,16 +61,12 @@ Then texts from your phone appear in the stock Messages app with a notification,
 there go out through your phone. Only texts are handed to Cabin, and only when the device has no
 working SIM of its own.
 
-## Android Auto
+## Bluetooth headsets and cars connected to this device
 
-There are two setups, and both work in HFP mode:
-
-- **The tablet runs a head-unit app** (Headunit Reloaded and similar). The phone's HFP link to the
-  tablet is the same link wireless Android Auto expects, and Cabin doesn't touch Wi-Fi or USB.
-  Leave `MEDIA_SINK=0` so music stays in Android Auto.
-- **The phone is also connected to a car's Android Auto.** The phone needs to allow two hands-free
-  devices at once: Developer options → *Maximum connected Bluetooth audio devices* → 2 or more.
-  Set `CALL_AUDIO=phone` so the car keeps call audio, while the tablet still shows and controls calls and texts.
+They keep working for this device's own audio. Cabin's calls can't use them: the call's audio
+arrives from your phone over its own Bluetooth link, and these devices can't pass it on to a
+second one, so Cabin keeps its calls on this device's earpiece. For call audio in a car, connect
+your phone to the car.
 
 ## SAP mode, honestly
 

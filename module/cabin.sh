@@ -384,8 +384,7 @@ uses_disabled_profiles() {
   [ "$API" -le 32 ] 2>/dev/null
 }
 
-# AG (this device acting as a phone toward headsets and car head units, which Android Auto
-# needs) off? Only when asked: an Android 11 Qualcomm stack ran AG and hands-free together
+# AG (this device acting as a phone toward its own headsets and cars) off? Only when asked: an Android 11 Qualcomm stack ran AG and hands-free together
 # fine. "auto" keeps it on; "off" is the escape hatch for stacks that can't.
 ag_off() {
   [ "$HFP_AG" = off ]
