@@ -264,40 +264,41 @@ public class LinkService extends Service {
 
     /** Schedule the codec request after Android reports the headset HFP connection ready. */
     private void scheduleHfpCodecRequest() {
-        if (!"cvsd".equals(Prefs.hfpCodec(this))) return;
         handler.postDelayed(new Runnable() {
             @Override
             public void run() {
-                requestHfpNarrowband();
+                applyHfpCodecPreferenceNow();
             }
         }, 700);
     }
 
     /**
-     * Requests CVSD on the tablet-to-headset HFP AG link. This must happen before that
-     * headset's SCO audio is active. BluetoothHeadset.disableWBS() returns false if the
-     * platform rejects the request (including when SCO is already active).
+     * Applies the HFP Audio Gateway's hidden WBS/NBS setting before headset SCO opens.
+     * The framework rejects enableWBS/disableWBS while its own SCO audio is active.
      */
-    private void requestHfpNarrowband() {
-        if (!"cvsd".equals(Prefs.hfpCodec(this)) || hfpCvsdRequested) return;
+    private void applyHfpCodecPreferenceNow() {
+        if (hfpCvsdRequested && "cvsd".equals(Prefs.hfpCodec(this))) return;
         Object profile = hfpAg;
         if (profile == null) {
-            Log.i(BtReflect.TAG, "HFP codec CVSD requested, but the headset profile is not bound yet");
+            Log.i(BtReflect.TAG, "HFP codec preference pending: headset profile is not bound yet");
             return;
         }
         List<BluetoothDevice> headsets = BtReflect.connected(profile);
         if (headsets.isEmpty()) {
-            Log.i(BtReflect.TAG, "HFP codec CVSD requested, but no HFP headset is connected");
+            Log.i(BtReflect.TAG, "HFP codec preference pending: no HFP headset is connected");
             return;
         }
-        boolean accepted = BtReflect.disableWbs(profile);
-        Log.i(BtReflect.TAG, "HFP codec CVSD/NBS request: disableWBS=" + accepted
-                + ", connected headsets=" + headsets.size());
+        boolean narrowband = "cvsd".equals(Prefs.hfpCodec(this));
+        boolean accepted = BtReflect.setWidebandEnabled(profile, !narrowband);
+        Log.i(BtReflect.TAG, "HFP codec preference=" + (narrowband ? "CVSD/NBS" : "WBS enabled")
+                + ", request accepted=" + accepted + ", connected headsets=" + headsets.size());
         if (accepted) {
-            hfpCvsdRequested = true;
-            detail("Requested CVSD narrowband (8 kHz) for the headset HFP link. Test a call; codec acceptance does not prove the full relay works.");
+            hfpCvsdRequested = narrowband;
+            detail(narrowband
+                    ? "Requested CVSD narrowband (8 kHz) for the headset HFP link. Test a call; codec acceptance does not prove the full relay works."
+                    : "Restored the headset HFP wideband codec setting. Reconnect the headset before testing normal codec negotiation.");
         } else {
-            detail("Could not request CVSD for the headset. It may already have SCO audio active, or this Bluetooth build may not expose disableWBS. Set HFP_CODEC before a call, then reconnect the headset.");
+            detail("Could not change the headset HFP codec setting. It may already have SCO audio active, or this Bluetooth build may reject the hidden API. Reconnect the headset and try before a call.");
         }
     }
 
