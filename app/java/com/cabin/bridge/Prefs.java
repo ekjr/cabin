@@ -21,6 +21,11 @@ final class Prefs {
         return get(context).getString("relay", "off");
     }
 
+    /** HFP Audio Gateway headset codec preference: "auto" or "cvsd". */
+    static String hfpCodec(Context context) {
+        return get(context).getString("hfp_codec", "auto");
+    }
+
     static String mode(Context context) {
         return get(context).getString("mode", MODE_HFP);
     }

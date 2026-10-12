@@ -20,6 +20,8 @@ final class BtReflect {
             "android.bluetooth.headsetclient.profile.action.AG_CALL_CHANGED";
     static final String ACTION_HFP_CONNECTION =
             "android.bluetooth.headsetclient.profile.action.CONNECTION_STATE_CHANGED";
+    static final String ACTION_HFP_AG_CONNECTION =
+            "android.bluetooth.headset.profile.action.CONNECTION_STATE_CHANGED";
     static final String ACTION_HFP_AUDIO =
             "android.bluetooth.headsetclient.profile.action.AUDIO_STATE_CHANGED";
     static final String EXTRA_AUDIO_WBS = "android.bluetooth.headsetclient.extra.AUDIO_WBS";
@@ -104,6 +106,16 @@ final class BtReflect {
     static boolean connectAudio(Object profile, BluetoothDevice device) {
         return invokeBool(profile, "connectAudio",
                 new Class[]{BluetoothDevice.class}, new Object[]{device});
+    }
+
+    /**
+     * Requests narrowband (CVSD/NBS) for the tablet's HFP Audio Gateway headsets.
+     * Android's BluetoothHeadset.disableWBS() is hidden from the public SDK; its
+     * implementation configures the Bluetooth HFP codec, not merely the audio HAL rate.
+     */
+    static boolean setWidebandEnabled(Object profile, boolean enabled) {
+        return invokeBool(profile, enabled ? "enableWBS" : "disableWBS",
+                new Class[0], new Object[0]);
     }
 
     static boolean dial(Object profile, BluetoothDevice device, String number) {
