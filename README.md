@@ -84,7 +84,7 @@ To test whether a wideband/narrowband codec mismatch contributes to return-path 
 `su -c cabin set HFP_CODEC cvsd` **before starting a call**. Then reconnect the AirPods to the tablet
 (or restart tablet Bluetooth with `su -c cabin restart-bt`) and test again. Cabin logs whether
 Android accepted the CVSD request, but that does not verify the negotiated codec or guarantee the
-full-duplex relay works. Use `su -c cabin set HFP_CODEC auto` to stop requesting narrowband; reconnect
+full-duplex relay works. Use `su -c cabin set HFP_CODEC auto` to re-enable wideband codec support; reconnect
 the AirPods for normal codec negotiation to take effect again.
 
 If calls start having static after trying these, tap **Reset Bluetooth** in the Cabin app.
