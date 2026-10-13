@@ -34,7 +34,6 @@ Other settings (`su -c cabin set KEY VALUE`):
 | `MEDIA_SINK` | `0` (default) / `1` | Also play the phone's music on this device (A2DP sink). While on, Bluetooth headphones on this device stop working. Android 13+ only. |
 | `MIC_BOOST` | `12` (default) / `0` / `6` / `18` / `24` | Extra mic gain in dB during car-kit calls (Qualcomm). They skip the voice processing that normally boosts the mic, so callers can hear you quietly. Applies immediately. |
 | `HFP_MIC` | `single` (default) / `dual` | Earpiece car-kit calls: use only the main (bottom) mic, or the phone's dual-mic pair. Dual-mic needs the voice processor, which car-kit calls skip, so single usually sounds cleaner. Speakerphone keeps its own mic. |
-| `HFP_CODEC` | `auto` (default) / `cvsd` | Request narrowband CVSD (8 kHz) on the tablet's HFP Audio Gateway link to AirPods/headsets, using Android's hidden `BluetoothHeadset.disableWBS()` API. This is experimental, may be unsupported by a vendor Bluetooth stack, and must be requested before headset call audio (SCO) opens. It can affect all HFP headsets connected to the tablet. |
 | `RELAY` | `off` (default) / `media` / `call` | **Experimental.** Bring the caller's voice to a Bluetooth headset connected to this device. See below; on the tested phone neither mode gives a usable two-way call. |
 | `CALL_HANDLER` | `auto` (default) / `system` / `cabin` | Which service puts calls into the Phone app. `auto` uses Cabin's on Android 12 and older. |
 | `HFP_AG` | `auto` (default) / `keep` / `off` | This device's own role as a phone toward Bluetooth headsets and cars. `auto`/`keep` leave it on alongside Cabin; `off` turns it off while Cabin is on. Try `off` if your phone won't connect "for calls". |
@@ -79,13 +78,6 @@ your phone to the car.
 - `media`: Cabin copies the caller's voice from the sound chip and plays it to the headset as
   music, while you talk into this device's mic (Qualcomm; needs root). On the tested phone the
   Bluetooth stack drops all headset music while a call link is open, so nothing is heard.
-
-To test whether a wideband/narrowband codec mismatch contributes to return-path static, set
-`su -c cabin set HFP_CODEC cvsd` **before starting a call**. Then reconnect the AirPods to the tablet
-(or restart tablet Bluetooth with `su -c cabin restart-bt`) and test again. Cabin logs whether
-Android accepted the CVSD request, but that does not verify the negotiated codec or guarantee the
-full-duplex relay works. Use `su -c cabin set HFP_CODEC auto` to re-enable wideband codec support; reconnect
-the AirPods for normal codec negotiation to take effect again.
 
 If calls start having static after trying these, tap **Reset Bluetooth** in the Cabin app.
 

@@ -5,8 +5,7 @@
 #   cabin hfp | sap                switch mode (and turn on)
 #   cabin set KEY VALUE            MEDIA_SINK 0|1, HFP_AG auto|keep|off,
 #                                  CALL_HANDLER auto|system|cabin, MIC_BOOST 0|6|12|18|24,
-#                                  HFP_MIC single|dual, HFP_CODEC auto|cvsd,
-#                                  RELAY off|media|call (experimental)
+#                                  HFP_MIC single|dual, RELAY off|media|call (experimental)
 #   cabin status                   show mode, settings and Bluetooth profile state
 #   cabin restart-bt               restart Bluetooth so profile changes take effect
 #   cabin sap-report               what this device's modem offers for SAP mode
@@ -67,7 +66,6 @@ load_conf() {
   MIC_BOOST=12
   HFP_MIC=single
   RELAY=off
-  HFP_CODEC=auto
   [ -f "$CONF" ] || return 0
   while IFS='=' read -r k v; do
     case "$k" in
@@ -79,7 +77,6 @@ load_conf() {
       MIC_BOOST) case "$v" in 0|6|12|18|24) MIC_BOOST=$v ;; esac ;;
       HFP_MIC) case "$v" in single|dual) HFP_MIC=$v ;; esac ;;
       RELAY) case "$v" in off|media|call) RELAY=$v ;; esac ;;
-      HFP_CODEC) case "$v" in auto|cvsd) HFP_CODEC=$v ;; esac ;;
     esac
   done < "$CONF"
 }
@@ -94,7 +91,6 @@ CALL_HANDLER=$CALL_HANDLER
 MIC_BOOST=$MIC_BOOST
 HFP_MIC=$HFP_MIC
 RELAY=$RELAY
-HFP_CODEC=$HFP_CODEC
 EOF
   mv "$CONF.tmp" "$CONF"
 }
@@ -549,8 +545,7 @@ notify_app() {
   if [ "$MEDIA_SINK" = 1 ]; then ms=true; else ms=false; fi
   am broadcast -f 0x20 -n "$PKG/.ConfigReceiver" -a com.cabin.bridge.CONFIG \
     --es mode "$MODE" --es last_on "$LAST_ON" \
-    --ez media_sink "$ms" --es hfp_ag "$HFP_AG" --es relay "$RELAY" \
-    --es hfp_codec "$HFP_CODEC" --es modem "$(modem_kind)" \
+    --ez media_sink "$ms" --es hfp_ag "$HFP_AG" --es relay "$RELAY" --es modem "$(modem_kind)" \
     --es hfp_pcm_dev_id "$(hfp_pcm_dev_id)" >/dev/null 2>&1
 }
 
@@ -595,7 +590,6 @@ set_key() {
     MIC_BOOST=0|MIC_BOOST=6|MIC_BOOST=12|MIC_BOOST=18|MIC_BOOST=24) MIC_BOOST=$2 ;;
     HFP_MIC=single|HFP_MIC=dual) HFP_MIC=$2 ;;
     RELAY=off|RELAY=media|RELAY=call) RELAY=$2 ;;
-    HFP_CODEC=auto|HFP_CODEC=cvsd) HFP_CODEC=$2 ;;
     *) return 1 ;;
   esac
 }
@@ -615,7 +609,6 @@ status() {
   echo "mic boost:   +${MIC_BOOST} dB (car-kit calls)"
   echo "earpiece mic: $HFP_MIC (car-kit calls)"
   echo "relay:       $RELAY (experimental)"
-  echo "hfp codec:   $HFP_CODEC (AirPods/headset HFP Audio Gateway)"
   echo "calls via:   $CALL_HANDLER ($(cabin_handles_calls && echo cabin || echo system))"
   echo "modem:       $(modem_kind)"
   echo "bluetooth:   $(bt_pkg), on=$(settings get global bluetooth_on 2>/dev/null)"
@@ -695,7 +688,7 @@ case "$cmd" in
     key=$1
     val=$2
     case "$key" in
-      MODE|MEDIA_SINK|HFP_AG|CALL_HANDLER|MIC_BOOST|HFP_MIC|RELAY|HFP_CODEC) ;;
+      MODE|MEDIA_SINK|HFP_AG|CALL_HANDLER|MIC_BOOST|HFP_MIC|RELAY) ;;
       *) echo "cabin: unknown setting $key" >&2; log "rejected key"; exit 2 ;;
     esac
     old_mode=$MODE
