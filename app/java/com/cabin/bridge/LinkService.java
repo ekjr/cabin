@@ -499,8 +499,12 @@ public class LinkService extends Service {
             return;
         }
         if (state != BtReflect.AUDIO_CONNECTED) return;
-        HalfRelay.onCallAudio(this, true);
-        Experiments.phoneAudio(this, true);
+        // The phone's audio link can report "connected" after the call has ended; don't start
+        // the relay (or experiments) for a call that is already over.
+        if (!CALLS.isEmpty()) {
+            HalfRelay.onCallAudio(this, true);
+            Experiments.phoneAudio(this, true);
+        }
         android.media.AudioManager am = getSystemService(android.media.AudioManager.class);
         if (am == null) return;
         boolean wbs = intent.getBooleanExtra(BtReflect.EXTRA_AUDIO_WBS, false);

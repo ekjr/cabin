@@ -192,6 +192,61 @@ adb shell 'su -c "printf \"\\257\\363\\000\\200\" | dd of=/proc/'$P'/mem bs=1 se
 
 Confirmed from the snoop log that the AirPods then negotiate CVSD (call 9).
 
+## Second goal: just the audio (caller to headset), using the tablet's own mic
+
+The caller already hears the tablet's mic through the phone link, so only the caller's voice has to
+reach the headset. That avoids a second call link: send it as music (A2DP) with `RELAY=media`
+(root `tinycap` taps the phone link; the app plays it to the headset). Setup used:
+`HFP_AG=off` (the headset can't open a call link and disturb the HAL), `RELAY=media`,
+`EXPERIMENTS=voip_mode`.
+
+What was established (all measured, mid-call):
+
+- **A2DP is suspended by Android while the phone state is `IN_CALL`.** The headset's output thread
+  showed `Suspend count: 1` / thousands of suspended frames, and the stream stayed `STANDBY` for the
+  whole call. The app's `AudioManager.setParameters("A2dpSuspended=false")` cannot override it
+  (that goes to the HAL; the suspend is applied by the audio policy).
+- **`mode_comm` cannot fix it**: Telecom sets `IN_CALL` ~70 ms after the app sets
+  `IN_COMMUNICATION`. **`voip_mode` does**: with `setAudioModeIsVoip(true)` the policy dump shows
+  `AUDIO_MODE_IN_COMMUNICATION` during the call, suspend count 0, and the output thread writing.
+- **The capture is good**: speech-shaped audio, peaks ~12000 of 32767.
+- **The level was far too low**: ~30 dB below the 440 Hz test tone that was clearly audible
+  (-12 dB at the headset output vs -25..-50 dB bursts for speech). Gain went 1x → 8x → 24x with a limit.
+- **The AVDTP stream to the headset is started ~1 s after answering and stays up for the call**
+  (btsnoop `AVDTP Start`/`Suspend`), yet the wearer heard nothing until after hang-up, then "something".
+  Not resolved. Leading suspects: the stack/controller throttling A2DP while the phone's eSCO link is
+  active (this device's snoop does not record outgoing A2DP media packets, so it could not be
+  measured), or the headset itself. The next test queued for this was injecting the 440 Hz tone
+  mid-call; it was not completed because the tablet's Bluetooth got stuck first.
+
+Bugs found and fixed on the way (all in the media-relay path):
+
+- The relay only stopped when the phone's audio link reported closed, which lags 20+ s after
+  hang-up. It now also stops when the call terminates, and `relay_stop` kills the capture by name
+  (`tinycap.*relay.pcm`), so a lost pid file can't leave it holding the port.
+- The phone's audio link can report *connected* after the call is over; that restarted the relay with
+  nothing left to stop it (orphaned `tinycap`). The app now ignores it when no call is active.
+- Experiment snapshot jobs queued ahead of the relay's own start request in the root helper and
+  delayed it 4-5 s; they are now only queued for experiments that use root.
+- `mode_comm` restored a stale saved mode after the call, leaving the audio policy in `IN_CALL`.
+
+### More pitfalls
+
+- **An orphaned `tinycap` holds the call's audio port** and silences later calls. Check
+  `ps -A | grep tinycap` after any media-relay run.
+- **Stuck HF-client audio state.** After media-relay runs the Bluetooth app sometimes stays in
+  `HeadsetClientStateMachine ... state=AudioOn` / `mAudioState: 2` with no call; new calls then never
+  reach the tablet. `cabin restart-bt` clears it (`dumpsys bluetooth_manager | grep -A3 HeadsetClientService`).
+- **`bta_hf_client_sco_create: Index 0x0000 already in use`** in logcat marks the same stuck state.
+- **`cabin refresh-audio` restarts the audio HAL**; it also "fixed" a no-audio state once, which
+  confounded an app-version test. Change one thing at a time.
+- **The Gabeldorsche toggle** (Developer options) restarts Bluetooth; it was turned on by mistake once
+  during testing. Leave it off.
+- A headset connected as an audio-gateway client makes Android try to open a call link to it at the
+  start of every call (even vetoed by Cabin), which can leave the HAL's loopback half-started. Use
+  `HFP_AG=off` for music-only tests.
+- The first call after any Bluetooth restart has been unreliable; do a throwaway call first.
+
 ## Ideas not yet tried
 
 - **Make the phone link mSBC instead** (better audio, both links 16 kHz): change the parameters the stack
@@ -207,6 +262,9 @@ Confirmed from the snoop log that the AirPods then negotiate CVSD (call 9).
   userspace stack on a rooted Android; heavy but the one route that avoids the chip's shared PCM.
 - **CVSD-only headset test:** isolates the chip limit from AirPods-specific behavior.
 - **LE Audio** headset (separate path, not HFP SCO) on a newer Android.
+- Finish the A2DP investigation: inject the 440 Hz test tone mid-call (stop `tinycap`, append the tone
+  to `files/relay.pcm`) to separate "A2DP can't be heard during a call" from "the captured audio is
+  too quiet"; try a second Bluetooth speaker/headphones to rule out the AirPods.
 - Untested catalog entries above (`hs_vvc`, `hs_audiomgr`, `early`, `late`, `hfp_cycle`, `nudge`,
   `mode_comm`).
 - Fix `sw_up` (find an `AudioRecord` configuration that initializes during a call) so the software
