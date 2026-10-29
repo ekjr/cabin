@@ -21,6 +21,12 @@ final class Prefs {
         return get(context).getString("relay", "off");
     }
 
+    /** Comma-separated relay experiments (see Experiments.NAMES); empty when none. */
+    static String experiments(Context context) {
+        String v = get(context).getString("experiments", "");
+        return "none".equals(v) ? "" : v;
+    }
+
     static String mode(Context context) {
         return get(context).getString("mode", MODE_HFP);
     }

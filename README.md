@@ -35,6 +35,7 @@ Other settings (`su -c cabin set KEY VALUE`):
 | `MIC_BOOST` | `12` (default) / `0` / `6` / `18` / `24` | Extra mic gain in dB during car-kit calls (Qualcomm). They skip the voice processing that normally boosts the mic, so callers can hear you quietly. Applies immediately. |
 | `HFP_MIC` | `single` (default) / `dual` | Earpiece car-kit calls: use only the main (bottom) mic, or the phone's dual-mic pair. Dual-mic needs the voice processor, which car-kit calls skip, so single usually sounds cleaner. Speakerphone keeps its own mic. |
 | `RELAY` | `off` (default) / `media` / `call` | **Experimental.** Bring the caller's voice to a Bluetooth headset connected to this device. See below; on the tested phone neither mode gives a usable two-way call. |
+| `EXPERIMENTS` | `none` (default) / names, comma separated | **Experimental.** Relay experiments to try with `RELAY=call` (or `media`). See "Relay experiments" below. |
 | `CALL_HANDLER` | `auto` (default) / `system` / `cabin` | Which service puts calls into the Phone app. `auto` uses Cabin's on Android 12 and older. |
 | `HFP_AG` | `auto` (default) / `keep` / `off` | This device's own role as a phone toward Bluetooth headsets and cars. `auto`/`keep` leave it on alongside Cabin; `off` turns it off while Cabin is on. Try `off` if your phone won't connect "for calls". |
 
@@ -80,6 +81,37 @@ your phone to the car.
   Bluetooth stack drops all headset music while a call link is open, so nothing is heard.
 
 If calls start having static after trying these, tap **Reset Bluetooth** in the Cabin app.
+
+### Relay experiments
+
+Getting a headset on this device to carry the whole call (the caller's voice *and* your mic) is
+unsolved on the tested phone: the phone's call link and the headset's call link share one Bluetooth
+audio path. These switches try different ways around that. Turn on a few, make a call, and note which
+(if any) gives a clean two-way call. They only run while `RELAY` is `call` or `media`, and none of
+them is verified to work.
+
+```
+su -c cabin set RELAY call
+su -c cabin set EXPERIMENTS cvsd,hs_connect     # or type the names into the Cabin app
+su -c cabin set EXPERIMENTS none                # off again
+```
+
+| Name | What it tries |
+|---|---|
+| `cvsd` | Asks the headset's call link for narrowband (CVSD, 8 kHz) so both links use the same codec. |
+| `pin8k` | Forces 8 kHz on the phone link's audio path (app parameter and `Internal BTSCO SampleRate`). |
+| `pin16k` | Forces 16 kHz instead. Try `pin8k` *or* `pin16k`, not both. |
+| `hs_connect` | Opens the headset's call link itself, 1.5 s after the phone's, instead of leaving it to Telecom. |
+| `hs_vvc` | Same, using a "virtual voice call" (`startScoUsingVirtualVoiceCall`). |
+| `hs_audiomgr` | Same, using Android's `startBluetoothSco`. |
+| `late` | Waits 5 s instead of 1.5 s before the `hs_*` experiments open the headset's link. |
+| `a2dp_keep` | Keeps un-pausing headset media during the call (helps `RELAY=media`). |
+| `sw_up` | Records the headset's mic (or this device's mic if it has no call link) in the app and plays it into the phone link's transmit side as root (`tinyplay` into a free `MultiMedia` front end). Needs the microphone permission. |
+
+Each run saves the mixer, Bluetooth and log state when the phone's link opens, a few seconds later
+and when it closes, in `/data/adb/cabin/relay-diag/`. To send them, tap **Save relay diagnostics**
+in the app or run `su -c cabin relay-diag`; it writes `Download/cabin-relay-diag.tgz`. For the
+Bluetooth packet log, turn on Developer options → Bluetooth HCI snoop log before the call.
 
 ## SAP mode, honestly
 

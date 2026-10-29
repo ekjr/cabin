@@ -104,6 +104,10 @@ public class LinkService extends Service {
         }
     };
 
+    static boolean running() {
+        return self != null;
+    }
+
     /**
      * The running link, ready to send a call command, or null (logged). Looks the phone up
      * again if it was never recorded or went stale, so a missed connection broadcast can't
@@ -324,6 +328,7 @@ public class LinkService extends Service {
         startInForeground("Waiting for your phone");
         registerBtReceivers();
         bindProfiles();
+        Experiments.start(this);
         watchOutbox();
         handler.postDelayed(new Runnable() {
             @Override
@@ -348,6 +353,7 @@ public class LinkService extends Service {
     @Override
     public void onDestroy() {
         handler.removeCallbacksAndMessages(null);
+        Experiments.stop(this);
         if (smsObserver != null) getContentResolver().unregisterContentObserver(smsObserver);
         if (receiversRegistered) unregisterReceiver(bluetoothEvents);
         if (adapter != null) {
@@ -485,17 +491,19 @@ public class LinkService extends Service {
         if (state >= 0) hfpAudio = state;
         if (state == 0) {
             HalfRelay.onCallAudio(this, false);
+            Experiments.phoneAudio(this, false);
             onHfpAudioLost();
             return;
         }
         if (state != BtReflect.AUDIO_CONNECTED) return;
         HalfRelay.onCallAudio(this, true);
+        Experiments.phoneAudio(this, true);
         android.media.AudioManager am = getSystemService(android.media.AudioManager.class);
         if (am == null) return;
         boolean wbs = intent.getBooleanExtra(BtReflect.EXTRA_AUDIO_WBS, false);
         applyHfpPcmDevice();
         try {
-            am.setParameters("hfp_set_sampling_rate=" + (wbs ? 16000 : 8000));
+            am.setParameters("hfp_set_sampling_rate=" + Experiments.rate(this, wbs));
             am.setParameters("hfp_enable=true");
             int max = am.getStreamMaxVolume(android.media.AudioManager.STREAM_VOICE_CALL);
             int vol = am.getStreamVolume(android.media.AudioManager.STREAM_VOICE_CALL);

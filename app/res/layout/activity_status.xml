@@ -169,6 +169,31 @@
             android:minHeight="48dp"
             android:text="Pull unread texts" />
 
+        <EditText
+            android:id="@+id/experiments"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:hint="Relay experiments, comma separated"
+            android:inputType="text"
+            android:minHeight="48dp" />
+
+        <Button
+            android:id="@+id/btn_experiments"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:minHeight="48dp"
+            android:text="Set relay experiments" />
+
+        <Button
+            android:id="@+id/btn_relay_diag"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:minHeight="48dp"
+            android:text="Save relay diagnostics" />
+
         <Button
             android:id="@+id/btn_reset_bt"
             android:layout_width="match_parent"
