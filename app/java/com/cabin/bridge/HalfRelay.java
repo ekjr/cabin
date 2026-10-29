@@ -26,7 +26,9 @@ public class HalfRelay extends BroadcastReceiver {
     static final String ACTION = "com.cabin.bridge.RELAY";
     private static final int RATE = 8000;
     /** The tapped call audio is much quieter than normal speech; boost it before playing. */
-    private static final int GAIN = 8;
+    private static final int GAIN = 24;
+    /** Hard limit after the gain, so loud words clip a little rather than blast the headset. */
+    private static final int LIMIT = 24000;
     private static volatile Thread worker;
 
     @Override
@@ -116,7 +118,7 @@ public class HalfRelay extends BroadcastReceiver {
                 if (n > 0) {
                     for (int i = 0; i + 1 < n; i += 2) {
                         int sample = (short) ((buf[i] & 0xff) | (buf[i + 1] << 8));
-                        sample = Math.max(-32768, Math.min(32767, sample * GAIN));
+                        sample = Math.max(-LIMIT, Math.min(LIMIT, sample * GAIN));
                         buf[i] = (byte) sample;
                         buf[i + 1] = (byte) (sample >> 8);
                     }
