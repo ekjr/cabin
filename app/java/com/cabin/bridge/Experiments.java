@@ -11,6 +11,7 @@ import android.media.AudioFormat;
 import android.media.AudioManager;
 import android.media.AudioRecord;
 import android.media.MediaRecorder;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
@@ -33,10 +34,20 @@ import java.io.IOException;
  *   late          wait 5 s instead of 1.5 s after the phone's link before the headset's
  *   a2dp_keep     keep un-pausing headset media during the call
  *   sw_up         record the headset mic and inject it into the phone link from root
+ *   sw_down       copy the phone link's audio from root and play it to the headset's call link
+ *   early         open the headset's link after 0.3 s instead of 1.5 s
+ *   mute_local    silence this device's own mic and earpiece loopback (use with sw_up/sw_down)
+ *   hs_commdev    pick the headset as the communication device (Android 12+)
+ *   mode_comm     put Android's audio in communication mode for the call
+ *   nudge         re-run the route nudge once the headset's link is open
+ *   hfp_reassert  re-send the phone link's HAL parameters once the headset's link is open
+ *   hfp_cycle     turn the phone link's HAL loopback off and on again at that point
+ *   mixer_reapply root re-applies the hfp-sco mixer settings at that point
  */
 final class Experiments {
     static final String[] NAMES = {"cvsd", "pin8k", "pin16k", "hs_connect", "hs_vvc",
-            "hs_audiomgr", "late", "a2dp_keep", "sw_up"};
+            "hs_audiomgr", "late", "a2dp_keep", "sw_up", "sw_down", "early", "mute_local",
+            "hs_commdev", "mode_comm", "nudge", "hfp_reassert", "hfp_cycle", "mixer_reapply"};
     private static final int RATE = 8000;
     private static final Handler HANDLER = new Handler(Looper.getMainLooper());
 
@@ -45,6 +56,8 @@ final class Experiments {
     private static volatile Thread uplink;
     private static volatile Thread keeper;
     private static boolean scoByAudioManager;
+    private static boolean lastWbs;
+    private static int savedMode = -1;
 
     private Experiments() {}
 
@@ -58,6 +71,7 @@ final class Experiments {
 
     /** Sample rate for the phone link's audio path; pinned by pin8k / pin16k. */
     static int rate(Context context, boolean wbs) {
+        lastWbs = wbs;
         if (active(context)) {
             if (has(context, "pin8k")) return 8000;
             if (has(context, "pin16k")) return 16000;
@@ -145,8 +159,34 @@ final class Experiments {
             closeHeadsetAudio(context);
             return;
         }
-        final long delay = has(context, "late") ? 5000 : 1500;
+        final long delay = has(context, "late") ? 5000 : has(context, "early") ? 300 : 1500;
         if (has(context, "a2dp_keep")) startKeeper(context);
+        if (has(context, "mode_comm")) {
+            AudioManager am = context.getSystemService(AudioManager.class);
+            if (am != null) {
+                savedMode = am.getMode();
+                am.setMode(AudioManager.MODE_IN_COMMUNICATION);
+            }
+        }
+        // Once the headset's link has had a moment, poke the phone link's side again.
+        HANDLER.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                afterHeadset(context);
+            }
+        }, delay + 2500);
+        if (has(context, "mute_local")) {
+            HANDLER.postDelayed(new Runnable() {
+                @Override
+                public void run() {
+                    AudioManager am = context.getSystemService(AudioManager.class);
+                    if (am == null) return;
+                    am.setMicrophoneMute(true);
+                    am.setParameters("hfp_volume=0");
+                    Log.i(BtReflect.TAG, "relay mute_local: mic muted, earpiece loopback volume 0");
+                }
+            }, delay + 1000);
+        }
         HANDLER.postDelayed(new Runnable() {
             @Override
             public void run() {
@@ -168,6 +208,29 @@ final class Experiments {
                 RootQueue.enqueue(context, "op=relay\nvalue=snap\n");
             }
         }, delay + 4000);
+    }
+
+    private static void afterHeadset(Context context) {
+        if (has(context, "nudge")) LinkService.nudgeAudioRoute();
+        if (has(context, "hfp_reassert") || has(context, "hfp_cycle")) {
+            final AudioManager am = context.getSystemService(AudioManager.class);
+            if (am == null) return;
+            if (has(context, "hfp_cycle")) {
+                am.setParameters("hfp_enable=false");
+                Log.i(BtReflect.TAG, "relay hfp_cycle: loopback off");
+            }
+            final Context app = context.getApplicationContext();
+            HANDLER.postDelayed(new Runnable() {
+                @Override
+                public void run() {
+                    LinkService.applyHfpPcmDevice(app);
+                    am.setParameters("hfp_set_sampling_rate=" + rate(app, lastWbs));
+                    am.setParameters("hfp_enable=true");
+                    Log.i(BtReflect.TAG, "relay hfp_reassert: hfp parameters sent again");
+                }
+            }, has(context, "hfp_cycle") ? 300 : 0);
+        }
+        if (has(context, "mixer_reapply")) RootQueue.enqueue(context, "op=relay\nvalue=reapply\n");
     }
 
     private static void applyCvsd(Context context) {
@@ -198,6 +261,16 @@ final class Experiments {
                     + (profile != null && BtReflect.invokeBool(profile, "startScoUsingVirtualVoiceCall",
                     new Class[0], new Object[0])));
         }
+        if (has(context, "hs_commdev") && Build.VERSION.SDK_INT >= 31) {
+            AudioManager am = context.getSystemService(AudioManager.class);
+            boolean set = false;
+            if (am != null) {
+                for (AudioDeviceInfo d : am.getAvailableCommunicationDevices()) {
+                    if (d.getType() == AudioDeviceInfo.TYPE_BLUETOOTH_SCO) set = am.setCommunicationDevice(d);
+                }
+            }
+            Log.i(BtReflect.TAG, "relay hs_commdev: setCommunicationDevice accepted=" + set);
+        }
         if (has(context, "hs_audiomgr")) {
             AudioManager am = context.getSystemService(AudioManager.class);
             if (am != null) {
@@ -212,6 +285,13 @@ final class Experiments {
 
     private static void closeHeadsetAudio(Context context) {
         Object profile = ag;
+        AudioManager audio = context.getSystemService(AudioManager.class);
+        if (audio != null) {
+            if (has(context, "mute_local")) audio.setMicrophoneMute(false);
+            if (has(context, "mode_comm") && savedMode >= 0) audio.setMode(savedMode);
+            if (has(context, "hs_commdev") && Build.VERSION.SDK_INT >= 31) audio.clearCommunicationDevice();
+        }
+        savedMode = -1;
         if (profile != null && has(context, "hs_vvc")) {
             BtReflect.invokeBool(profile, "stopScoUsingVirtualVoiceCall", new Class[0], new Object[0]);
         }

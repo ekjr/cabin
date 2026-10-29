@@ -36,7 +36,7 @@ public class HalfRelay extends BroadcastReceiver {
 
     /** Called when the call's audio link to the phone opens or closes. */
     static void onCallAudio(Context context, boolean up) {
-        if ("media".equals(Prefs.relay(context))) {
+        if ("media".equals(Prefs.relay(context)) && !Experiments.has(context, "sw_down")) {
             RootQueue.enqueue(context, "op=relay\nvalue=" + (up ? "start" : "stop") + "\n");
         }
     }
@@ -57,12 +57,14 @@ public class HalfRelay extends BroadcastReceiver {
 
     private static void run(Context context, File pcm) {
         AudioManager am = context.getSystemService(AudioManager.class);
+        // sw_down: play into the headset's call link instead of its media link.
+        boolean sco = Experiments.has(context, "sw_down");
         // Android pauses headset media during calls; this relay is media, so un-pause it.
-        am.setParameters("A2dpSuspended=false");
+        if (!sco) am.setParameters("A2dpSuspended=false");
         int min = AudioTrack.getMinBufferSize(RATE, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT);
         AudioTrack track = new AudioTrack.Builder()
                 .setAudioAttributes(new AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .setUsage(sco ? AudioAttributes.USAGE_VOICE_COMMUNICATION : AudioAttributes.USAGE_MEDIA)
                         .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                         .build())
                 .setAudioFormat(new AudioFormat.Builder()
@@ -74,11 +76,22 @@ public class HalfRelay extends BroadcastReceiver {
                 .setTransferMode(AudioTrack.MODE_STREAM)
                 .build();
         AudioDeviceInfo headset = null;
-        for (AudioDeviceInfo d : am.getDevices(AudioManager.GET_DEVICES_OUTPUTS)) {
-            if (d.getType() == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP) headset = d;
+        int wanted = sco ? AudioDeviceInfo.TYPE_BLUETOOTH_SCO : AudioDeviceInfo.TYPE_BLUETOOTH_A2DP;
+        // The headset's call link opens a moment after the phone's; wait for it.
+        for (int tries = 0; headset == null && tries < (sco ? 40 : 1) && worker == Thread.currentThread(); tries++) {
+            for (AudioDeviceInfo d : am.getDevices(AudioManager.GET_DEVICES_OUTPUTS)) {
+                if (d.getType() == wanted) headset = d;
+            }
+            if (headset == null && sco) {
+                try {
+                    Thread.sleep(500);
+                } catch (InterruptedException e) {
+                    break;
+                }
+            }
         }
         if (headset == null) {
-            Log.i(BtReflect.TAG, "relay: no Bluetooth headset for media; not playing");
+            Log.i(BtReflect.TAG, "relay: no Bluetooth headset " + (sco ? "call link" : "for media") + "; not playing");
             track.release();
             return;
         }
@@ -93,7 +106,7 @@ public class HalfRelay extends BroadcastReceiver {
             while (worker == Thread.currentThread()) {
                 // Android pauses headset media when a call starts (and may again later).
                 long now = android.os.SystemClock.elapsedRealtime();
-                if (now - unpaused > 1000) {
+                if (!sco && now - unpaused > 1000) {
                     am.setParameters("A2dpSuspended=false");
                     unpaused = now;
                 }

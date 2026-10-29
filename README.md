@@ -107,6 +107,15 @@ su -c cabin set EXPERIMENTS none                # off again
 | `late` | Waits 5 s instead of 1.5 s before the `hs_*` experiments open the headset's link. |
 | `a2dp_keep` | Keeps un-pausing headset media during the call (helps `RELAY=media`). |
 | `sw_up` | Records the headset's mic (or this device's mic if it has no call link) in the app and plays it into the phone link's transmit side as root (`tinyplay` into a free `MultiMedia` front end). Needs the microphone permission. |
+| `sw_down` | The other half of a software bridge: root copies the phone link's audio (as `RELAY=media` does) and the app plays it into the headset's *call* link instead of its media link. Use with `sw_up` and an `hs_*` experiment. |
+| `early` | Opens the headset's link after 0.3 s instead of 1.5 s. |
+| `mute_local` | Mutes this device's own mic and earpiece loopback during the call, so a `sw_up` / `sw_down` bridge isn't doubled by the normal path. |
+| `hs_commdev` | Picks the headset as Android's communication device (Android 12+ only). |
+| `mode_comm` | Puts Android's audio in communication mode during the call. |
+| `nudge` | Re-runs Cabin's audio route nudge once the headset's link is open. |
+| `hfp_reassert` | Sends the phone link's HAL parameters (`hfp_enable`, rate, PCM device) again once the headset's link is open, in case the HAL dropped them. |
+| `hfp_cycle` | Turns the phone link's HAL loopback off and on again at that point. |
+| `mixer_reapply` | Root sets the `hfp-sco` mixer controls again at that point, in case the headset's link moved the Bluetooth audio port to another path. |
 
 Each run saves the mixer, Bluetooth and log state when the phone's link opens, a few seconds later
 and when it closes, in `/data/adb/cabin/relay-diag/`. To send them, tap **Save relay diagnostics**

@@ -80,7 +80,7 @@ handle() {
       run_cabin from-app "$key" "$value"
       ;;
     relay)
-      case "$value" in start|stop|up|down|snap|diag) run_cabin "relay-$value" ;; esac
+      case "$value" in start|stop|up|down|snap|reapply|diag) run_cabin "relay-$value" ;; esac
       ;;
     bt)
       [ "$value" = restart ] && { log "app asks to reset Bluetooth"; run_cabin restart-bt; }

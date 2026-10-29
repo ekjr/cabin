@@ -60,7 +60,7 @@ rp() {
 }
 
 # Relay experiments the app and this script know about (README, "Relay experiments").
-EXP_NAMES="cvsd pin8k pin16k hs_connect hs_vvc hs_audiomgr late a2dp_keep sw_up"
+EXP_NAMES="cvsd pin8k pin16k hs_connect hs_vvc hs_audiomgr late a2dp_keep sw_up sw_down early mute_local hs_commdev mode_comm nudge hfp_reassert hfp_cycle mixer_reapply"
 
 # Keeps only known experiment names from a comma-separated list; prints them comma-separated.
 clean_experiments() {
@@ -661,7 +661,7 @@ cmd=$1
 RELAY_APP=/data/data/com.cabin.bridge/files
 relay_start() {
   relay_stop
-  [ "$RELAY" = media ] || return 0
+  [ "$RELAY" = media ] || has_exp sw_down || return 0
   f=$RELAY_APP/relay.pcm
   : > "$f"
   chown "$(stat -c %u:%g "$RELAY_APP")" "$f"
@@ -752,11 +752,25 @@ relay_up() {
   relay_snap sco-up
   relay_pin
   has_exp sw_up && uplink_start
+  has_exp sw_down && relay_start
+}
+
+# mixer_reapply: set the hfp-sco path's mixer controls again, in case starting the headset's
+# link made the HAL switch the Bluetooth audio port to another path.
+relay_reapply() {
+  command -v tinymix >/dev/null 2>&1 || return 0
+  cat /vendor/etc/mixer_paths*.xml 2>/dev/null | sed -n '/<path name="hfp-sco">/,/<\/path>/p' \
+    | sed -n 's/.*<ctl name="\([^"]*\)" value="\([^"]*\)".*/\1|\2/p' | while IFS='|' read -r n v; do
+    tinymix "$n" "$v" >/dev/null 2>&1
+  done
+  log "relay: hfp-sco mixer settings applied again"
+  relay_snap reapplied
 }
 
 relay_down() {
   [ -n "$EXPERIMENTS" ] || return 0
   uplink_stop
+  has_exp sw_down && relay_stop
   relay_snap sco-down
 }
 
@@ -851,6 +865,9 @@ case "$cmd" in
     ;;
   relay-down)
     relay_down
+    ;;
+  relay-reapply)
+    relay_reapply
     ;;
   relay-snap)
     relay_snap "${1:-snap}"
