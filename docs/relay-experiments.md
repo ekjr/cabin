@@ -230,6 +230,15 @@ Bugs found and fixed on the way (all in the media-relay path):
   delayed it 4-5 s; they are now only queued for experiments that use root.
 - `mode_comm` restored a stale saved mode after the call, leaving the audio policy in `IN_CALL`.
 
+**Tone test (mid-call, `RELAY=media` + `voip_mode`, `HFP_AG=off`): not heard.** A 440 Hz tone (the
+same file that *was* clearly audible outside a call) was appended to the relay file 11 s and 18 s into
+a call. At that moment the tablet side was healthy: audio mode `IN_COMMUNICATION`, headset output
+thread not suspended (suspend count 0), writing every ~200 ms, A2DP control reporting a 1.5 s sink
+latency, no errors in the Bluetooth audio logs. The wearer heard no beep, during or after the call.
+So the tablet delivers the audio and it is lost downstream: the Bluetooth stack/controller while the
+phone's eSCO link is up, or the AirPods. The remaining isolating test is a different Bluetooth
+speaker/headphones in place of the AirPods (same tone test).
+
 ### More pitfalls
 
 - **An orphaned `tinycap` holds the call's audio port** and silences later calls. Check
