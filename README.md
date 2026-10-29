@@ -88,7 +88,8 @@ Getting a headset on this device to carry the whole call (the caller's voice *an
 unsolved on the tested phone: the phone's call link and the headset's call link share one Bluetooth
 audio path. These switches try different ways around that. Turn on a few, make a call, and note which
 (if any) gives a clean two-way call. They only run while `RELAY` is `call` or `media`, and none of
-them is verified to work.
+them is verified to work. Results, packet-log findings and ideas not yet tried are in
+[docs/relay-experiments.md](docs/relay-experiments.md).
 
 ```
 su -c cabin set RELAY call
@@ -98,7 +99,7 @@ su -c cabin set EXPERIMENTS none                # off again
 
 | Name | What it tries |
 |---|---|
-| `cvsd` | Asks the headset's call link for narrowband (CVSD, 8 kHz) so both links use the same codec. |
+| `cvsd` | Asks the headset's call link for narrowband (CVSD, 8 kHz) so both links use the same codec. **Does nothing on Android 11** (the Bluetooth API it calls doesn't exist there). |
 | `pin8k` | Forces 8 kHz on the phone link's audio path (app parameter and `Internal BTSCO SampleRate`). |
 | `pin16k` | Forces 16 kHz instead. Try `pin8k` *or* `pin16k`, not both. |
 | `hs_connect` | Opens the headset's call link itself, 1.5 s after the phone's, instead of leaving it to Telecom. |
