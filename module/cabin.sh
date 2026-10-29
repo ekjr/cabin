@@ -673,6 +673,8 @@ relay_start() {
   log "relay started"
 }
 relay_stop() {
+  # A capture left behind by a lost pid file would hold the call's audio port.
+  pkill -f "tinycap.*relay.pcm" 2>/dev/null
   [ -f "$DATA/relay.pid" ] || return 0
   kill "$(cat "$DATA/relay.pid")" 2>/dev/null
   rm -f "$DATA/relay.pid" "$RELAY_APP/relay.pcm"

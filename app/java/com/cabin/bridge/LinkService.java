@@ -474,6 +474,9 @@ public class LinkService extends Service {
                 ensureAudio();
             } else if (state == BtReflect.CALL_TERMINATED && CALLS.isEmpty()) {
                 activeSince = 0;
+                // The phone's audio link can stay up for a while after hang-up; don't keep relaying.
+                HalfRelay.onCallAudio(this, false);
+                HalfRelay.stop();
             }
             if (state == BtReflect.CALL_TERMINATED) stopCallAlert();
         }

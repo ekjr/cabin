@@ -158,7 +158,10 @@ final class Experiments {
         if (!active(context)) return;
         HANDLER.removeCallbacksAndMessages(null);
         stopThreads();
-        RootQueue.enqueue(context, "op=relay\nvalue=" + (up ? "up" : "down") + "\n");
+        // Each root request takes a few seconds; don't queue ones nothing needs, or the
+        // media relay's own start waits behind them.
+        boolean root = needsRoot(context);
+        if (root) RootQueue.enqueue(context, "op=relay\nvalue=" + (up ? "up" : "down") + "\n");
         if (!up) {
             closeHeadsetAudio(context);
             return;
@@ -214,7 +217,7 @@ final class Experiments {
             }, delay + 2000);
         }
         // Mixer and Bluetooth state once both links have had time to settle.
-        HANDLER.postDelayed(new Runnable() {
+        if (root) HANDLER.postDelayed(new Runnable() {
             @Override
             public void run() {
                 RootQueue.enqueue(context, "op=relay\nvalue=snap\n");
@@ -243,6 +246,12 @@ final class Experiments {
             }, has(context, "hfp_cycle") ? 300 : 0);
         }
         if (has(context, "mixer_reapply")) RootQueue.enqueue(context, "op=relay\nvalue=reapply\n");
+    }
+
+    /** Experiments that act through the root helper (the rest only use app-side calls). */
+    private static boolean needsRoot(Context context) {
+        return has(context, "pin8k") || has(context, "pin16k") || has(context, "sw_up")
+                || has(context, "sw_down") || has(context, "mixer_reapply");
     }
 
     private static void applyCvsd(Context context) {
