@@ -20,6 +20,9 @@ final class BtReflect {
             "android.bluetooth.headsetclient.profile.action.AG_CALL_CHANGED";
     static final String ACTION_HFP_CONNECTION =
             "android.bluetooth.headsetclient.profile.action.CONNECTION_STATE_CHANGED";
+    /** Connection state of the headsets and cars this device is a phone (audio gateway) to. */
+    static final String ACTION_HFP_AG_CONNECTION =
+            "android.bluetooth.headset.profile.action.CONNECTION_STATE_CHANGED";
     static final String ACTION_HFP_AUDIO =
             "android.bluetooth.headsetclient.profile.action.AUDIO_STATE_CHANGED";
     static final String EXTRA_AUDIO_WBS = "android.bluetooth.headsetclient.extra.AUDIO_WBS";
@@ -104,6 +107,14 @@ final class BtReflect {
     static boolean connectAudio(Object profile, BluetoothDevice device) {
         return invokeBool(profile, "connectAudio",
                 new Class[]{BluetoothDevice.class}, new Object[]{device});
+    }
+
+    /**
+     * Requests narrowband (CVSD) or wideband for the headsets this device is a phone to.
+     * BluetoothHeadset.disableWBS()/enableWBS() are hidden; they configure the HFP codec.
+     */
+    static boolean setWidebandEnabled(Object profile, boolean enabled) {
+        return invokeBool(profile, enabled ? "enableWBS" : "disableWBS", new Class[0], new Object[0]);
     }
 
     static boolean dial(Object profile, BluetoothDevice device, String number) {
@@ -202,7 +213,7 @@ final class BtReflect {
         }
     }
 
-    private static boolean invokeBool(Object target, String name, Class<?>[] types, Object[] args) {
+    static boolean invokeBool(Object target, String name, Class<?>[] types, Object[] args) {
         if (target == null) return false;
         try {
             Object result = target.getClass().getMethod(name, types).invoke(target, args);

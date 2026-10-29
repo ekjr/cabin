@@ -17,12 +17,14 @@ public class ConfigReceiver extends BroadcastReceiver {
         copy(intent, e, "last_on");
         copy(intent, e, "hfp_ag");
         copy(intent, e, "relay");
+        copy(intent, e, "experiments");
         copy(intent, e, "modem");
         copy(intent, e, "hfp_pcm_dev_id");
         if (intent.hasExtra("media_sink")) e.putBoolean("media_sink", intent.getBooleanExtra("media_sink", false));
         e.remove("pending");
         e.commit();
         LinkService.applyHfpPcmDevice(context);
+        Experiments.refresh(context);
         apply(context);
     }
 

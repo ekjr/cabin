@@ -5,12 +5,14 @@
 #   cabin hfp | sap                switch mode (and turn on)
 #   cabin set KEY VALUE            MEDIA_SINK 0|1, HFP_AG auto|keep|off,
 #                                  CALL_HANDLER auto|system|cabin, MIC_BOOST 0|6|12|18|24,
-#                                  HFP_MIC single|dual, RELAY off|media|call (experimental)
+#                                  HFP_MIC single|dual, RELAY off|media|call (experimental),
+#                                  EXPERIMENTS none|name,name,... (relay experiments, see README)
 #   cabin status                   show mode, settings and Bluetooth profile state
 #   cabin restart-bt               restart Bluetooth so profile changes take effect
 #   cabin sap-report               what this device's modem offers for SAP mode
 #   cabin report                   save a debug report to /sdcard/Download/cabin-report.txt
 #   cabin refresh-audio            re-apply the call-audio fixes without a reboot
+#   cabin relay-diag               save relay diagnostics to /sdcard/Download/cabin-relay-diag.tgz
 #
 # Internal (module scripts): boot-props, boot, from-app KEY VALUE
 
@@ -57,6 +59,23 @@ rp() {
   return 1
 }
 
+# Relay experiments the app and this script know about (README, "Relay experiments").
+EXP_NAMES="cvsd pin8k pin16k hs_connect hs_vvc hs_audiomgr late a2dp_keep sw_up sw_down early mute_local hs_commdev mode_comm nudge hfp_reassert hfp_cycle mixer_reapply"
+
+# Keeps only known experiment names from a comma-separated list; prints them comma-separated.
+clean_experiments() {
+  out=
+  for n in $(echo "$1" | tr ',' ' '); do
+    case " $EXP_NAMES " in *" $n "*) case ",$out," in *",$n,"*) ;; *) out="${out:+$out,}$n" ;; esac ;; esac
+  done
+  echo "$out"
+}
+
+has_exp() {
+  case ",$EXPERIMENTS," in *",$1,"*) return 0 ;; esac
+  return 1
+}
+
 load_conf() {
   MODE=hfp
   LAST_ON=hfp
@@ -66,6 +85,7 @@ load_conf() {
   MIC_BOOST=12
   HFP_MIC=single
   RELAY=off
+  EXPERIMENTS=
   [ -f "$CONF" ] || return 0
   while IFS='=' read -r k v; do
     case "$k" in
@@ -77,6 +97,7 @@ load_conf() {
       MIC_BOOST) case "$v" in 0|6|12|18|24) MIC_BOOST=$v ;; esac ;;
       HFP_MIC) case "$v" in single|dual) HFP_MIC=$v ;; esac ;;
       RELAY) case "$v" in off|media|call) RELAY=$v ;; esac ;;
+      EXPERIMENTS) EXPERIMENTS=$(clean_experiments "$v") ;;
     esac
   done < "$CONF"
 }
@@ -91,6 +112,7 @@ CALL_HANDLER=$CALL_HANDLER
 MIC_BOOST=$MIC_BOOST
 HFP_MIC=$HFP_MIC
 RELAY=$RELAY
+EXPERIMENTS=$EXPERIMENTS
 EOF
   mv "$CONF.tmp" "$CONF"
 }
@@ -545,7 +567,7 @@ notify_app() {
   if [ "$MEDIA_SINK" = 1 ]; then ms=true; else ms=false; fi
   am broadcast -f 0x20 -n "$PKG/.ConfigReceiver" -a com.cabin.bridge.CONFIG \
     --es mode "$MODE" --es last_on "$LAST_ON" \
-    --ez media_sink "$ms" --es hfp_ag "$HFP_AG" --es relay "$RELAY" --es modem "$(modem_kind)" \
+    --ez media_sink "$ms" --es hfp_ag "$HFP_AG" --es relay "$RELAY" --es experiments "${EXPERIMENTS:-none}" --es modem "$(modem_kind)" \
     --es hfp_pcm_dev_id "$(hfp_pcm_dev_id)" >/dev/null 2>&1
 }
 
@@ -590,6 +612,8 @@ set_key() {
     MIC_BOOST=0|MIC_BOOST=6|MIC_BOOST=12|MIC_BOOST=18|MIC_BOOST=24) MIC_BOOST=$2 ;;
     HFP_MIC=single|HFP_MIC=dual) HFP_MIC=$2 ;;
     RELAY=off|RELAY=media|RELAY=call) RELAY=$2 ;;
+    EXPERIMENTS=*)
+      case "$2" in none|off|"") EXPERIMENTS= ;; *) EXPERIMENTS=$(clean_experiments "$2") ;; esac ;;
     *) return 1 ;;
   esac
 }
@@ -609,6 +633,7 @@ status() {
   echo "mic boost:   +${MIC_BOOST} dB (car-kit calls)"
   echo "earpiece mic: $HFP_MIC (car-kit calls)"
   echo "relay:       $RELAY (experimental)"
+  echo "experiments: ${EXPERIMENTS:-none} (of: $EXP_NAMES)"
   echo "calls via:   $CALL_HANDLER ($(cabin_handles_calls && echo cabin || echo system))"
   echo "modem:       $(modem_kind)"
   echo "bluetooth:   $(bt_pkg), on=$(settings get global bluetooth_on 2>/dev/null)"
@@ -636,7 +661,7 @@ cmd=$1
 RELAY_APP=/data/data/com.cabin.bridge/files
 relay_start() {
   relay_stop
-  [ "$RELAY" = media ] || return 0
+  [ "$RELAY" = media ] || has_exp sw_down || return 0
   f=$RELAY_APP/relay.pcm
   : > "$f"
   chown "$(stat -c %u:%g "$RELAY_APP")" "$f"
@@ -654,6 +679,121 @@ relay_stop() {
   tinymix 'MultiMedia10 Mixer INTERNAL_BT_SCO_TX' 0 >/dev/null 2>&1
   am broadcast -n com.cabin.bridge/.HalfRelay -a com.cabin.bridge.RELAY --es state stop >/dev/null 2>&1
   log "relay stopped"
+}
+
+# ---- Relay experiments (EXPERIMENTS). The app does the Bluetooth side; this is the root side:
+# pinning the BT audio sample rate, injecting the headset mic into the phone link (sw_up), and
+# saving mixer / Bluetooth state at each step so a run can be compared with the next.
+DIAG=$DATA/relay-diag
+
+relay_snap() {
+  label=$1
+  mkdir -p "$DIAG"
+  t=$(date '+%H%M%S')
+  command -v tinymix >/dev/null 2>&1 && tinymix > "$DIAG/$t-$label.mixer.txt" 2>&1
+  dumpsys bluetooth_manager 2>/dev/null | head -300 > "$DIAG/$t-$label.bt.txt"
+  logcat -b all -d -t 600 -v threadtime 2>/dev/null \
+    | grep -i -E 'Cabin|bt_btif|bt_hci|bt_sco|sco|Headset|audio_hw|hfp|CallAudio' > "$DIAG/$t-$label.log.txt"
+  # Keep the newest few files only.
+  ls -t "$DIAG" 2>/dev/null | tail -n +61 | while read -r f; do rm -f "${DIAG:?}/${f:?}"; done
+  log "relay snapshot $label"
+}
+
+# pin8k / pin16k: the BT audio port must match the rate the HAL and both links use.
+relay_pin() {
+  command -v tinymix >/dev/null 2>&1 || return 0
+  if has_exp pin8k; then
+    tinymix 'Internal BTSCO SampleRate' BTSCO_RATE_8KHZ >/dev/null 2>&1
+    log "relay: BT SCO rate pinned to 8 kHz"
+  elif has_exp pin16k; then
+    tinymix 'Internal BTSCO SampleRate' BTSCO_RATE_16KHZ >/dev/null 2>&1
+    log "relay: BT SCO rate pinned to 16 kHz"
+  fi
+}
+
+# A MultiMedia front end with playback, to feed the phone link's transmit side (sw_up).
+# Prints "<MultiMediaN> <pcm device>".
+uplink_fe() {
+  for fe in MultiMedia9 MultiMedia7 MultiMedia5 MultiMedia3; do
+    line=$(grep ": $fe " /proc/asound/pcm 2>/dev/null | head -1)
+    case "$line" in *playback*) ;; *) continue ;; esac
+    has_ctl "INTERNAL_BT_SCO_RX Audio Mixer $fe" || continue
+    dev=$(echo "$line" | sed -n 's/^[0-9]*-0*\([0-9][0-9]*\):.*/\1/p')
+    [ -n "$dev" ] && { echo "$fe $dev"; return; }
+  done
+}
+
+uplink_start() {
+  uplink_stop
+  set -- $(uplink_fe)
+  if [ -z "$1" ]; then
+    log "relay sw_up: no playback front end routable to INTERNAL_BT_SCO_RX; skipped"
+    return 0
+  fi
+  f=$RELAY_APP/relay-up.pcm
+  : > "$f"
+  chown "$(stat -c %u:%g "$RELAY_APP")" "$f"
+  chcon "$(stat -c %C "$RELAY_APP")" "$f"
+  tinymix "INTERNAL_BT_SCO_RX Audio Mixer $1" 1 >/dev/null 2>&1
+  echo "$1" > "$DATA/relay-up.fe"
+  setsid sh -c "tail -c +1 -f '$f' | tinyplay -- -D 0 -d $2" </dev/null >/dev/null 2>&1 &
+  log "relay sw_up: playing the app's recording into the phone link via $1 (pcm $2)"
+}
+
+uplink_stop() {
+  [ -f "$DATA/relay-up.fe" ] || return 0
+  pkill -f "relay-up.pcm" 2>/dev/null
+  tinymix "INTERNAL_BT_SCO_RX Audio Mixer $(cat "$DATA/relay-up.fe")" 0 >/dev/null 2>&1
+  rm -f "${DATA:?}/relay-up.fe" "${RELAY_APP:?}/relay-up.pcm"
+}
+
+relay_up() {
+  [ "$RELAY" != off ] && [ -n "$EXPERIMENTS" ] || return 0
+  relay_snap sco-up
+  relay_pin
+  has_exp sw_up && uplink_start
+  has_exp sw_down && relay_start
+}
+
+# mixer_reapply: set the hfp-sco path's mixer controls again, in case starting the headset's
+# link made the HAL switch the Bluetooth audio port to another path.
+relay_reapply() {
+  command -v tinymix >/dev/null 2>&1 || return 0
+  cat /vendor/etc/mixer_paths*.xml 2>/dev/null | sed -n '/<path name="hfp-sco">/,/<\/path>/p' \
+    | sed -n 's/.*<ctl name="\([^"]*\)" value="\([^"]*\)".*/\1|\2/p' | while IFS='|' read -r n v; do
+    tinymix "$n" "$v" >/dev/null 2>&1
+  done
+  log "relay: hfp-sco mixer settings applied again"
+  relay_snap reapplied
+}
+
+relay_down() {
+  [ -n "$EXPERIMENTS" ] || return 0
+  uplink_stop
+  has_exp sw_down && relay_stop
+  relay_snap sco-down
+}
+
+# Everything the next round of experiments needs, in one file: run it during a call that has
+# both links up (or right after), then send the file.
+relay_diag() {
+  relay_snap manual
+  out=/sdcard/Download/cabin-relay-diag.tgz
+  w=$DATA/relay-diag-work
+  rm -rf "${w:?}"
+  mkdir -p "$w"
+  cp "$DIAG"/* "$w"/ 2>/dev/null
+  cp /proc/asound/cards /proc/asound/pcm "$w"/ 2>/dev/null
+  status > "$w/cabin-status.txt" 2>&1
+  dumpsys audio > "$w/audio.txt" 2>&1
+  dumpsys telecom > "$w/telecom.txt" 2>&1
+  for b in /data/misc/bluetooth/logs/btsnoop_hci.log /data/log/bt/btsnoop_hci.log /data/vendor/bluetooth/btsnoop_hci.log; do
+    [ -f "$b" ] && cp "$b" "$w/$(basename "$b")"
+  done
+  getprop | grep -i -E 'bluetooth|bt\.|audio|sco|wcn|btsnoop' > "$w/props.txt" 2>&1
+  tar -czf "$out" -C "$w" . 2>/dev/null || tar -cf "$out" -C "$w" .
+  rm -rf "${w:?}"
+  echo "Saved $out. Send that file. (For HCI details, turn on Developer options > Bluetooth HCI snoop log first.)"
 }
 
 case "$cmd" in
@@ -688,7 +828,7 @@ case "$cmd" in
     key=$1
     val=$2
     case "$key" in
-      MODE|MEDIA_SINK|HFP_AG|CALL_HANDLER|MIC_BOOST|HFP_MIC|RELAY) ;;
+      MODE|MEDIA_SINK|HFP_AG|CALL_HANDLER|MIC_BOOST|HFP_MIC|RELAY|EXPERIMENTS) ;;
       *) echo "cabin: unknown setting $key" >&2; log "rejected key"; exit 2 ;;
     esac
     old_mode=$MODE
@@ -720,6 +860,21 @@ case "$cmd" in
   relay-stop)
     relay_stop
     ;;
+  relay-up)
+    relay_up
+    ;;
+  relay-down)
+    relay_down
+    ;;
+  relay-reapply)
+    relay_reapply
+    ;;
+  relay-snap)
+    relay_snap "${1:-snap}"
+    ;;
+  relay-diag)
+    relay_diag
+    ;;
   sap-report)
     sap_report
     ;;
@@ -730,7 +885,7 @@ case "$cmd" in
     status
     ;;
   *)
-    sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'
     exit 1
     ;;
 esac

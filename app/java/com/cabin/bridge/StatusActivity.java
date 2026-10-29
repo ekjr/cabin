@@ -68,6 +68,21 @@ public class StatusActivity extends Activity implements SharedPreferences.OnShar
                 LinkService.reply(prefs.getString("reply_to", ""), body);
             }
         });
+        findViewById(R.id.btn_experiments).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                EditText field = findViewById(R.id.experiments);
+                String list = field.getText().toString().trim().replace(" ", "");
+                request("EXPERIMENTS", list.length() == 0 ? "none" : list);
+            }
+        });
+        findViewById(R.id.btn_relay_diag).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                RootQueue.enqueue(StatusActivity.this, "op=relay\nvalue=diag\n");
+                detail("Saving relay diagnostics to Download/cabin-relay-diag.tgz (a few seconds).");
+            }
+        });
         findViewById(R.id.btn_pair).setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -264,6 +279,7 @@ public class StatusActivity extends Activity implements SharedPreferences.OnShar
         needed.add(Manifest.permission.SEND_SMS);
         needed.add(Manifest.permission.READ_PHONE_STATE);
         needed.add(Manifest.permission.READ_CONTACTS);
+        needed.add(Manifest.permission.RECORD_AUDIO);  // relay experiment sw_up
         if (Build.VERSION.SDK_INT >= 31) needed.add(Manifest.permission.BLUETOOTH_CONNECT);
         if (Build.VERSION.SDK_INT >= 33) needed.add(Manifest.permission.POST_NOTIFICATIONS);
         ArrayList<String> missing = new ArrayList<String>();
