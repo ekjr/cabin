@@ -89,7 +89,8 @@ unsolved on the tested phone: the phone's call link and the headset's call link 
 audio path. These switches try different ways around that. Turn on a few, make a call, and note which
 (if any) gives a clean two-way call. They only run while `RELAY` is `call` or `media`, and none of
 them is verified to work. Results, packet-log findings and ideas not yet tried are in
-[docs/relay-experiments.md](docs/relay-experiments.md).
+[docs/relay-experiments.md](docs/relay-experiments.md); every test run and its outcome is in
+[docs/relay-test-results.md](docs/relay-test-results.md).
 
 ```
 su -c cabin set RELAY call
