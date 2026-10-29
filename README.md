@@ -115,6 +115,7 @@ su -c cabin set EXPERIMENTS none                # off again
 | `nudge` | Re-runs Cabin's audio route nudge once the headset's link is open. |
 | `hfp_reassert` | Sends the phone link's HAL parameters (`hfp_enable`, rate, PCM device) again once the headset's link is open, in case the HAL dropped them. |
 | `hfp_cycle` | Turns the phone link's HAL loopback off and on again at that point. |
+| `route_bt` | Selects Bluetooth as the call's audio route once the headset's link is open (otherwise you pick it on the call screen). Use with an `hs_*` experiment. |
 | `mixer_reapply` | Root sets the `hfp-sco` mixer controls again at that point, in case the headset's link moved the Bluetooth audio port to another path. |
 
 Each run saves the mixer, Bluetooth and log state when the phone's link opens, a few seconds later

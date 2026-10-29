@@ -43,11 +43,12 @@ import java.io.IOException;
  *   hfp_reassert  re-send the phone link's HAL parameters once the headset's link is open
  *   hfp_cycle     turn the phone link's HAL loopback off and on again at that point
  *   mixer_reapply root re-applies the hfp-sco mixer settings at that point
+ *   route_bt      select Bluetooth as the call's audio route once the headset's link is open
  */
 final class Experiments {
     static final String[] NAMES = {"cvsd", "pin8k", "pin16k", "hs_connect", "hs_vvc",
             "hs_audiomgr", "late", "a2dp_keep", "sw_up", "sw_down", "early", "mute_local",
-            "hs_commdev", "mode_comm", "nudge", "hfp_reassert", "hfp_cycle", "mixer_reapply"};
+            "hs_commdev", "mode_comm", "nudge", "hfp_reassert", "hfp_cycle", "mixer_reapply", "route_bt"};
     private static final int RATE = 8000;
     private static final Handler HANDLER = new Handler(Looper.getMainLooper());
 
@@ -193,6 +194,14 @@ final class Experiments {
                 openHeadsetAudio(context);
             }
         }, delay);
+        if (has(context, "route_bt")) {
+            HANDLER.postDelayed(new Runnable() {
+                @Override
+                public void run() {
+                    CabinConnectionService.routeToBluetooth();
+                }
+            }, delay + 1500);
+        }
         if (has(context, "sw_up")) {
             HANDLER.postDelayed(new Runnable() {
                 @Override

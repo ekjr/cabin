@@ -30,7 +30,8 @@ appops set "$PKG" WRITE_SMS allow >/dev/null 2>&1
 dumpsys deviceidle whitelist +"$PKG" >/dev/null 2>&1
 
 PIDFILE=$DATA/cabind.pid
-if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
+# The pid from before a reboot may now belong to some other process; check it is the helper.
+if [ -f "$PIDFILE" ] && grep -q cabind.sh "/proc/$(cat "$PIDFILE")/cmdline" 2>/dev/null; then
   :
 else
   sh "$MODDIR/cabind.sh" >/dev/null 2>&1 &

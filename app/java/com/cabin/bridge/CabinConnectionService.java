@@ -32,6 +32,18 @@ public class CabinConnectionService extends ConnectionService {
     }
 
     /** Whether a Phone-app call already exists for this phone call (by id or number). */
+    /** Relay experiment route_bt: put the call on the headset's call link. */
+    static void routeToBluetooth() {
+        MAIN.post(new Runnable() {
+            @Override
+            public void run() {
+                for (CabinConnection c : BY_ID.values()) {
+                    c.setAudioRoute(android.telecom.CallAudioState.ROUTE_BLUETOOTH);
+                }
+            }
+        });
+    }
+
     static boolean tracks(int id, String number) {
         if (id >= 0 && BY_ID.containsKey(id)) return true;
         for (CabinConnection c : BY_ID.values()) {
