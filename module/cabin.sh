@@ -60,7 +60,7 @@ rp() {
 }
 
 # Relay experiments the app and this script know about (README, "Relay experiments").
-EXP_NAMES="cvsd pin8k pin16k hs_connect hs_vvc hs_audiomgr late a2dp_keep sw_up sw_down early mute_local hs_commdev mode_comm nudge hfp_reassert hfp_cycle mixer_reapply route_bt"
+EXP_NAMES="cvsd pin8k pin16k hs_connect hs_vvc hs_audiomgr late a2dp_keep sw_up sw_down early mute_local hs_commdev mode_comm nudge hfp_reassert hfp_cycle mixer_reapply route_bt voip_mode"
 
 # Keeps only known experiment names from a comma-separated list; prints them comma-separated.
 clean_experiments() {

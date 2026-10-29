@@ -191,7 +191,10 @@ public class CabinConnectionService extends ConnectionService {
         CabinConnection(String number, boolean incoming) {
             this.number = number == null ? "" : number;
             setAddress(Uri.fromParts("tel", this.number, null), TelecomManager.PRESENTATION_ALLOWED);
-            setAudioModeIsVoip(false);
+            // Relay experiment voip_mode: have Telecom use the VoIP audio mode instead of IN_CALL, so
+            // Android doesn't suspend the headset's music (A2DP) output for the call.
+            setAudioModeIsVoip(appContext != null && Experiments.active(appContext)
+                    && Experiments.has(appContext, "voip_mode"));
             setConnectionCapabilities(CAPABILITY_MUTE | CAPABILITY_SUPPORT_HOLD);
             this.incoming = incoming;
             if (incoming) {

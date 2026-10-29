@@ -44,11 +44,14 @@ import java.io.IOException;
  *   hfp_cycle     turn the phone link's HAL loopback off and on again at that point
  *   mixer_reapply root re-applies the hfp-sco mixer settings at that point
  *   route_bt      select Bluetooth as the call's audio route once the headset's link is open
+ *   voip_mode     mark Cabin's calls as VoIP so Telecom uses MODE_IN_COMMUNICATION, not IN_CALL
+ *                 (IN_CALL suspends the headset's music output; try with RELAY=media)
  */
 final class Experiments {
     static final String[] NAMES = {"cvsd", "pin8k", "pin16k", "hs_connect", "hs_vvc",
             "hs_audiomgr", "late", "a2dp_keep", "sw_up", "sw_down", "early", "mute_local",
-            "hs_commdev", "mode_comm", "nudge", "hfp_reassert", "hfp_cycle", "mixer_reapply", "route_bt"};
+            "hs_commdev", "mode_comm", "nudge", "hfp_reassert", "hfp_cycle", "mixer_reapply", "route_bt",
+            "voip_mode"};
     private static final int RATE = 8000;
     private static final Handler HANDLER = new Handler(Looper.getMainLooper());
 

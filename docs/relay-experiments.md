@@ -94,6 +94,7 @@ rs "cabin set EXPERIMENTS none"
 | `hfp_cycle` | `hfp_enable=false` then `true` after the headset link | no | |
 | `nudge` | Re-run Cabin's route nudge after the headset link | no | |
 | `mode_comm` | `AudioManager.setMode(MODE_IN_COMMUNICATION)` for the call | no | |
+| `voip_mode` | Mark the call as VoIP (`setAudioModeIsVoip(true)`) so Telecom itself uses `MODE_IN_COMMUNICATION` | see call log | `mode_comm` cannot work: Telecom overrides the mode ~70 ms later. |
 | `hs_commdev` | `setCommunicationDevice()` to the headset | no | Android 12+ only; no-op on this Android 11 tablet. |
 
 Also: `RELAY=call` alone (let Telecom route it; user picks Bluetooth by hand) and `RELAY=media` (documented
