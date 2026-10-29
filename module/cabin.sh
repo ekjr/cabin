@@ -60,7 +60,7 @@ rp() {
 }
 
 # Relay experiments the app and this script know about (README, "Relay experiments").
-EXP_NAMES="cvsd pin8k pin16k hs_connect hs_vvc hs_audiomgr late a2dp_keep sw_up sw_down early mute_local hs_commdev mode_comm nudge hfp_reassert hfp_cycle mixer_reapply"
+EXP_NAMES="cvsd pin8k pin16k hs_connect hs_vvc hs_audiomgr late a2dp_keep sw_up sw_down early mute_local hs_commdev mode_comm nudge hfp_reassert hfp_cycle mixer_reapply route_bt voip_mode"
 
 # Keeps only known experiment names from a comma-separated list; prints them comma-separated.
 clean_experiments() {
@@ -640,7 +640,7 @@ status() {
   for p in $PROPS; do
     printf '  %-45s %s (stock: %s)\n' "$p" "$(getprop "$p")" "$(orig_value "$p")"
   done
-  if [ -f "$DATA/cabind.pid" ] && kill -0 "$(cat "$DATA/cabind.pid")" 2>/dev/null; then
+  if [ -f "$DATA/cabind.pid" ] && grep -q cabind.sh "/proc/$(cat "$DATA/cabind.pid")/cmdline" 2>/dev/null; then
     echo "helper:      running"
   else
     echo "helper:      not running"
@@ -673,6 +673,8 @@ relay_start() {
   log "relay started"
 }
 relay_stop() {
+  # A capture left behind by a lost pid file would hold the call's audio port.
+  pkill -f "tinycap.*relay.pcm" 2>/dev/null
   [ -f "$DATA/relay.pid" ] || return 0
   kill "$(cat "$DATA/relay.pid")" 2>/dev/null
   rm -f "$DATA/relay.pid" "$RELAY_APP/relay.pcm"

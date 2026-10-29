@@ -43,11 +43,15 @@ import java.io.IOException;
  *   hfp_reassert  re-send the phone link's HAL parameters once the headset's link is open
  *   hfp_cycle     turn the phone link's HAL loopback off and on again at that point
  *   mixer_reapply root re-applies the hfp-sco mixer settings at that point
+ *   route_bt      select Bluetooth as the call's audio route once the headset's link is open
+ *   voip_mode     mark Cabin's calls as VoIP so Telecom uses MODE_IN_COMMUNICATION, not IN_CALL
+ *                 (IN_CALL suspends the headset's music output; try with RELAY=media)
  */
 final class Experiments {
     static final String[] NAMES = {"cvsd", "pin8k", "pin16k", "hs_connect", "hs_vvc",
             "hs_audiomgr", "late", "a2dp_keep", "sw_up", "sw_down", "early", "mute_local",
-            "hs_commdev", "mode_comm", "nudge", "hfp_reassert", "hfp_cycle", "mixer_reapply"};
+            "hs_commdev", "mode_comm", "nudge", "hfp_reassert", "hfp_cycle", "mixer_reapply", "route_bt",
+            "voip_mode"};
     private static final int RATE = 8000;
     private static final Handler HANDLER = new Handler(Looper.getMainLooper());
 
@@ -57,7 +61,7 @@ final class Experiments {
     private static volatile Thread keeper;
     private static boolean scoByAudioManager;
     private static boolean lastWbs;
-    private static int savedMode = -1;
+    private static boolean modeSet;
 
     private Experiments() {}
 
@@ -154,7 +158,10 @@ final class Experiments {
         if (!active(context)) return;
         HANDLER.removeCallbacksAndMessages(null);
         stopThreads();
-        RootQueue.enqueue(context, "op=relay\nvalue=" + (up ? "up" : "down") + "\n");
+        // Each root request takes a few seconds; don't queue ones nothing needs, or the
+        // media relay's own start waits behind them.
+        boolean root = needsRoot(context);
+        if (root) RootQueue.enqueue(context, "op=relay\nvalue=" + (up ? "up" : "down") + "\n");
         if (!up) {
             closeHeadsetAudio(context);
             return;
@@ -164,8 +171,8 @@ final class Experiments {
         if (has(context, "mode_comm")) {
             AudioManager am = context.getSystemService(AudioManager.class);
             if (am != null) {
-                savedMode = am.getMode();
                 am.setMode(AudioManager.MODE_IN_COMMUNICATION);
+                modeSet = true;
             }
         }
         // Once the headset's link has had a moment, poke the phone link's side again.
@@ -193,6 +200,14 @@ final class Experiments {
                 openHeadsetAudio(context);
             }
         }, delay);
+        if (has(context, "route_bt")) {
+            HANDLER.postDelayed(new Runnable() {
+                @Override
+                public void run() {
+                    CabinConnectionService.routeToBluetooth();
+                }
+            }, delay + 1500);
+        }
         if (has(context, "sw_up")) {
             HANDLER.postDelayed(new Runnable() {
                 @Override
@@ -202,7 +217,7 @@ final class Experiments {
             }, delay + 2000);
         }
         // Mixer and Bluetooth state once both links have had time to settle.
-        HANDLER.postDelayed(new Runnable() {
+        if (root) HANDLER.postDelayed(new Runnable() {
             @Override
             public void run() {
                 RootQueue.enqueue(context, "op=relay\nvalue=snap\n");
@@ -231,6 +246,12 @@ final class Experiments {
             }, has(context, "hfp_cycle") ? 300 : 0);
         }
         if (has(context, "mixer_reapply")) RootQueue.enqueue(context, "op=relay\nvalue=reapply\n");
+    }
+
+    /** Experiments that act through the root helper (the rest only use app-side calls). */
+    private static boolean needsRoot(Context context) {
+        return has(context, "pin8k") || has(context, "pin16k") || has(context, "sw_up")
+                || has(context, "sw_down") || has(context, "mixer_reapply");
     }
 
     private static void applyCvsd(Context context) {
@@ -288,10 +309,14 @@ final class Experiments {
         AudioManager audio = context.getSystemService(AudioManager.class);
         if (audio != null) {
             if (has(context, "mute_local")) audio.setMicrophoneMute(false);
-            if (has(context, "mode_comm") && savedMode >= 0) audio.setMode(savedMode);
+            // Telecom normally resets the mode itself when the call ends; only undo ours if it is
+            // still in place. (Restoring a mode saved earlier could leave the policy in IN_CALL.)
+            if (modeSet && audio.getMode() == AudioManager.MODE_IN_COMMUNICATION) {
+                audio.setMode(AudioManager.MODE_NORMAL);
+            }
             if (has(context, "hs_commdev") && Build.VERSION.SDK_INT >= 31) audio.clearCommunicationDevice();
         }
-        savedMode = -1;
+        modeSet = false;
         if (profile != null && has(context, "hs_vvc")) {
             BtReflect.invokeBool(profile, "stopScoUsingVirtualVoiceCall", new Class[0], new Object[0]);
         }

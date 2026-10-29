@@ -88,7 +88,9 @@ Getting a headset on this device to carry the whole call (the caller's voice *an
 unsolved on the tested phone: the phone's call link and the headset's call link share one Bluetooth
 audio path. These switches try different ways around that. Turn on a few, make a call, and note which
 (if any) gives a clean two-way call. They only run while `RELAY` is `call` or `media`, and none of
-them is verified to work.
+them is verified to work. Results, packet-log findings and ideas not yet tried are in
+[docs/relay-experiments.md](docs/relay-experiments.md); every test run and its outcome is in
+[docs/relay-test-results.md](docs/relay-test-results.md).
 
 ```
 su -c cabin set RELAY call
@@ -98,7 +100,7 @@ su -c cabin set EXPERIMENTS none                # off again
 
 | Name | What it tries |
 |---|---|
-| `cvsd` | Asks the headset's call link for narrowband (CVSD, 8 kHz) so both links use the same codec. |
+| `cvsd` | Asks the headset's call link for narrowband (CVSD, 8 kHz) so both links use the same codec. **Does nothing on Android 11** (the Bluetooth API it calls doesn't exist there). |
 | `pin8k` | Forces 8 kHz on the phone link's audio path (app parameter and `Internal BTSCO SampleRate`). |
 | `pin16k` | Forces 16 kHz instead. Try `pin8k` *or* `pin16k`, not both. |
 | `hs_connect` | Opens the headset's call link itself, 1.5 s after the phone's, instead of leaving it to Telecom. |
@@ -115,6 +117,8 @@ su -c cabin set EXPERIMENTS none                # off again
 | `nudge` | Re-runs Cabin's audio route nudge once the headset's link is open. |
 | `hfp_reassert` | Sends the phone link's HAL parameters (`hfp_enable`, rate, PCM device) again once the headset's link is open, in case the HAL dropped them. |
 | `hfp_cycle` | Turns the phone link's HAL loopback off and on again at that point. |
+| `route_bt` | Selects Bluetooth as the call's audio route once the headset's link is open (otherwise you pick it on the call screen). Use with an `hs_*` experiment. |
+| `voip_mode` | Marks Cabin's calls as VoIP so Android uses the communication audio mode instead of the in-call mode. The in-call mode suspends the headset's music (A2DP) output, which blocks `RELAY=media`. Takes effect for new calls. |
 | `mixer_reapply` | Root sets the `hfp-sco` mixer controls again at that point, in case the headset's link moved the Bluetooth audio port to another path. |
 
 Each run saves the mixer, Bluetooth and log state when the phone's link opens, a few seconds later

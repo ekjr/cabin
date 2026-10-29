@@ -32,6 +32,18 @@ public class CabinConnectionService extends ConnectionService {
     }
 
     /** Whether a Phone-app call already exists for this phone call (by id or number). */
+    /** Relay experiment route_bt: put the call on the headset's call link. */
+    static void routeToBluetooth() {
+        MAIN.post(new Runnable() {
+            @Override
+            public void run() {
+                for (CabinConnection c : BY_ID.values()) {
+                    c.setAudioRoute(android.telecom.CallAudioState.ROUTE_BLUETOOTH);
+                }
+            }
+        });
+    }
+
     static boolean tracks(int id, String number) {
         if (id >= 0 && BY_ID.containsKey(id)) return true;
         for (CabinConnection c : BY_ID.values()) {
@@ -179,7 +191,10 @@ public class CabinConnectionService extends ConnectionService {
         CabinConnection(String number, boolean incoming) {
             this.number = number == null ? "" : number;
             setAddress(Uri.fromParts("tel", this.number, null), TelecomManager.PRESENTATION_ALLOWED);
-            setAudioModeIsVoip(false);
+            // Relay experiment voip_mode: have Telecom use the VoIP audio mode instead of IN_CALL, so
+            // Android doesn't suspend the headset's music (A2DP) output for the call.
+            setAudioModeIsVoip(appContext != null && Experiments.active(appContext)
+                    && Experiments.has(appContext, "voip_mode"));
             setConnectionCapabilities(CAPABILITY_MUTE | CAPABILITY_SUPPORT_HOLD);
             this.incoming = incoming;
             if (incoming) {
