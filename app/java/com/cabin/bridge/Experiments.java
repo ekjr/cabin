@@ -58,7 +58,7 @@ final class Experiments {
     private static volatile Thread keeper;
     private static boolean scoByAudioManager;
     private static boolean lastWbs;
-    private static int savedMode = -1;
+    private static boolean modeSet;
 
     private Experiments() {}
 
@@ -165,8 +165,8 @@ final class Experiments {
         if (has(context, "mode_comm")) {
             AudioManager am = context.getSystemService(AudioManager.class);
             if (am != null) {
-                savedMode = am.getMode();
                 am.setMode(AudioManager.MODE_IN_COMMUNICATION);
+                modeSet = true;
             }
         }
         // Once the headset's link has had a moment, poke the phone link's side again.
@@ -297,10 +297,14 @@ final class Experiments {
         AudioManager audio = context.getSystemService(AudioManager.class);
         if (audio != null) {
             if (has(context, "mute_local")) audio.setMicrophoneMute(false);
-            if (has(context, "mode_comm") && savedMode >= 0) audio.setMode(savedMode);
+            // Telecom normally resets the mode itself when the call ends; only undo ours if it is
+            // still in place. (Restoring a mode saved earlier could leave the policy in IN_CALL.)
+            if (modeSet && audio.getMode() == AudioManager.MODE_IN_COMMUNICATION) {
+                audio.setMode(AudioManager.MODE_NORMAL);
+            }
             if (has(context, "hs_commdev") && Build.VERSION.SDK_INT >= 31) audio.clearCommunicationDevice();
         }
-        savedMode = -1;
+        modeSet = false;
         if (profile != null && has(context, "hs_vvc")) {
             BtReflect.invokeBool(profile, "stopScoUsingVirtualVoiceCall", new Class[0], new Object[0]);
         }
